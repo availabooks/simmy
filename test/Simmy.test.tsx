@@ -49,11 +49,11 @@ describe("Simmy", () => {
 });
 
 describe("Simmy modes", () => {
-  it("opens a movie behind a Play button and Take control, waiting for the visitor", () => {
+  it("opens a movie behind a Play button and Try it yourself, waiting for the visitor", () => {
     const html = renderSimmy();
     expect(html).toContain('class="xd-intro"');
     expect(html).toContain('aria-label="Play"');
-    expect(html).toContain('class="xd-intro-control"');
+    expect(html).toMatch(/class="xd-intro-control".*Try it yourself/);
     // Nothing is playing yet, so the bar offers Start rather than Pause, with the sound on.
     expect(html).toContain('aria-label="Start"');
     expect(html).not.toContain('aria-label="Pause"');

@@ -12,7 +12,7 @@ looks the same on any page.
 **Script tag** (one self-contained file; Preact, the styles and the YAML parser inside):
 
 ```html
-<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.2.2/dist/simmy.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.2.3/dist/simmy.js"></script>
 
 <simmy-app src="/modules/my-assignment.yaml"></simmy-app>
 ```
@@ -52,7 +52,7 @@ The embed page posts `{ type: "simmy:graded", report }` to its parent when a stu
 | `fonts` | `none` skips loading Carlito and Inter from Google Fonts. |
 
 **Modes.** In `movie` mode (the default) nothing plays until the visitor asks: the desktop opens
-darkened behind a **Play** button and a **Take control** button. The demo plays once, with sound,
+darkened behind a **Play** button and a **Try it yourself** button. The demo plays once, with sound,
 and stops on the finished sheet with the visitor in control; Play starts it over. The desktop
 switcher and Start over sit in a settings panel behind the gear on the playback bar, so the page
 around the movie stays clear. In `kiosk` mode the demo starts by itself, muted (the visitor can

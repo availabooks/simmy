@@ -129,7 +129,7 @@ export type SimmyProps = {
   /** The desktop to show: mac, win or web. "auto" (the default) matches the visitor's computer, mac or win. */
   platform?: Platform | "auto";
   /**
-   * "movie" (the default) waits behind a darkened Play / Take control screen and stops at the end.
+   * "movie" (the default) waits behind a darkened Play / Try it yourself screen and stops at the end.
    * "kiosk" plays by itself, muted, and loops.
    */
   mode?: SimmyMode;
@@ -178,7 +178,7 @@ function NarrationNote({
   );
 }
 
-/** Movie mode's opening screen: the desktop darkened behind a Play button, with Take control beside it. */
+/** Movie mode's opening screen: the desktop darkened behind a Play button, with Try it yourself beside it. */
 function Intro({ onPlay, onTakeControl }: { onPlay: () => void; onTakeControl: () => void }) {
   return (
     <div class="xd-intro" role="group" aria-label="Start the demo">
@@ -189,7 +189,7 @@ function Intro({ onPlay, onTakeControl }: { onPlay: () => void; onTakeControl: (
       </button>
       <button type="button" class="xd-intro-control" onClick={onTakeControl}>
         <CursorMark size={16} />
-        Take control
+        Try it yourself
       </button>
     </div>
   );

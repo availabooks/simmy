@@ -3003,6 +3003,37 @@ button:focus-visible {
   animation: xd-intro-in 240ms ease-out;
 }
 
+/*
+ * While the demo plays, pointing at the desktop darkens it and offers Take control. Touch screens
+ * have no hover, so they keep the old way: a tap on the sheet or the pane takes over.
+ */
+.xd-veil {
+  position: absolute;
+  inset: 0 0 var(--xd-transport, 46px);
+  z-index: 180;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgb(10 14 12 / 0.55);
+  font-family: var(--ui-font);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+@media (hover: hover) {
+  .xd-veil {
+    display: flex;
+  }
+
+  .xd-desktop:hover .xd-veil,
+  .xd-veil:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .xd-phone-body .xd-intro {
   inset: 0;
 }
@@ -3071,6 +3102,10 @@ button:focus-visible {
 
   .xd-intro {
     animation: none;
+  }
+
+  .xd-veil {
+    transition: none;
   }
 
   .xd-ants,

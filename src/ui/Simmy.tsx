@@ -195,6 +195,25 @@ function Intro({ onPlay, onTakeControl }: { onPlay: () => void; onTakeControl: (
   );
 }
 
+/** Over the desktop while the demo plays: hovering darkens it and offers the mouse back. CSS shows it, so it costs nothing until then. */
+function TakeControlVeil({ onTake }: { onTake: () => void }) {
+  return (
+    <div class="xd-veil" onClick={onTake}>
+      <button
+        type="button"
+        class="xd-intro-control"
+        onClick={(event) => {
+          event.stopPropagation();
+          onTake();
+        }}
+      >
+        <CursorMark size={16} />
+        Take control
+      </button>
+    </div>
+  );
+}
+
 export function Simmy({
   platform: platformProp = "auto",
   mode = "movie",
@@ -1361,6 +1380,7 @@ export function Simmy({
             <span class="xd-cursor-ring" />
           </div>
           {intro && <Intro onPlay={play} onTakeControl={() => setIntro(false)} />}
+          {session && hold === "play" && !intro && <TakeControlVeil onTake={takeControl} />}
           {transport}
         </div>
       )}

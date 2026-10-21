@@ -84,6 +84,12 @@ describe("Simmy modes", () => {
     expect(html).not.toContain('aria-label="Settings"');
   });
 
+  it("offers Take control over the desktop while a demo plays, and not before", () => {
+    expect(renderSimmy({ mode: "kiosk" })).toContain('class="xd-veil"');
+    expect(renderSimmy()).not.toContain('class="xd-veil"');
+    expect(renderSimmy({ mode: "kiosk", autoplay: false })).not.toContain('class="xd-veil"');
+  });
+
   it("plays a kiosk by itself, muted, with no Play screen", () => {
     const html = renderSimmy({ mode: "kiosk" });
     expect(html).not.toContain('class="xd-intro"');

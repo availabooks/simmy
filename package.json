@@ -1,6 +1,6 @@
 {
   "name": "@availabooks/simmy",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "An embeddable Excel simulator with a graded task pane, configured by a YAML module.",
   "type": "module",
   "license": "MIT",

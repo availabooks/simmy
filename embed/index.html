@@ -8,7 +8,7 @@
       For hosts that can only embed an iframe (an LMS page, a CMS block):
         <iframe src="https://…/embed.html?module=https://…/my-module.yaml&platform=auto"
                 style="width:100%;height:820px;border:0" title="Excel simulator"></iframe>
-      Query parameters: module (required), platform, autoplay=false.
+      Query parameters: module (required), platform, mode (movie | kiosk), ribbon (open | collapsed), autoplay=false.
       The module URL must allow this page's origin (CORS) if it lives elsewhere.
     -->
     <style>
@@ -29,7 +29,7 @@
       const params = new URLSearchParams(location.search);
       const el = document.createElement("simmy-app");
       el.setAttribute("fit-screen", "");
-      for (const name of ["platform", "autoplay"]) {
+      for (const name of ["platform", "mode", "ribbon", "autoplay"]) {
         if (params.has(name)) el.setAttribute(name, params.get(name));
       }
       if (params.has("module")) {

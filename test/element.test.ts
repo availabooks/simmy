@@ -48,13 +48,16 @@ describe("<simmy-app>", () => {
     const el = document.createElement("simmy-app");
     el.setAttribute("fonts", "none");
     el.setAttribute("autoplay", "false");
-    el.setAttribute("src", "/modules/references.yaml");
+    el.setAttribute("src", "/hosted-modules/references-and-calculations/config.yaml");
     document.body.append(el);
     await ready(el);
 
     expect(fetch).toHaveBeenCalledOnce();
-    expect(String((fetch.mock.calls[0] as unknown[])[0])).toMatch(/\/modules\/references\.yaml$/);
+    expect(String((fetch.mock.calls[0] as unknown[])[0])).toMatch(/\/hosted-modules\/references-and-calculations\/config\.yaml$/);
     expect(el.module?.tasks).toHaveLength(4);
+    expect(el.module?.autopilot[0]).toMatchObject({
+      audio: new URL("/hosted-modules/references-and-calculations/audio/1.mp3", document.baseURI).href,
+    });
   });
 
   it("shows the problems and fires simmy:error for a bad module", async () => {
@@ -103,6 +106,39 @@ describe("<simmy-app>", () => {
     };
     await settle();
     expect(el.shadowRoot?.querySelector('slot[name="head"]')).not.toBeNull();
+  });
+
+  it("opens in movie mode behind a Play screen, and plays a kiosk without one", async () => {
+    const el = document.createElement("simmy-app");
+    el.setAttribute("fonts", "none");
+    document.body.append(el);
+    el.module = {
+      workbook: { name: "Book1" },
+      assignment: { title: "T", text: "X" },
+      tasks: [{ text: "One", range: "A1", solution: "=1", rules: [] }],
+    };
+    await settle();
+    const shadow = el.shadowRoot as ShadowRoot;
+    expect(shadow.querySelector(".xd-intro")).not.toBeNull();
+
+    el.setAttribute("mode", "kiosk");
+    await settle();
+    expect(shadow.querySelector(".xd-intro")).toBeNull();
+  });
+
+  it("takes the web platform from the attribute", async () => {
+    const el = document.createElement("simmy-app");
+    el.setAttribute("fonts", "none");
+    el.setAttribute("platform", "web");
+    document.body.append(el);
+    el.module = {
+      workbook: { name: "Book1" },
+      assignment: { title: "T", text: "X" },
+      tasks: [{ text: "One", range: "A1", solution: "=1", rules: [] }],
+    };
+    await settle();
+    const shadow = el.shadowRoot as ShadowRoot;
+    expect(shadow.querySelector(".xd")?.getAttribute("data-platform")).toBe("web");
   });
 
   it("measures a sticky header for chrome-offset", async () => {

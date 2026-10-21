@@ -1,6 +1,6 @@
 {
   "name": "@availabooks/simmy",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "An embeddable Excel simulator with a graded task pane, configured by a YAML module.",
   "type": "module",
   "license": "MIT",
@@ -9,8 +9,7 @@
     "url": "git+https://github.com/availabooks/simmy.git"
   },
   "files": [
-    "dist",
-    "modules"
+    "dist"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -20,8 +19,7 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./standalone": "./dist/simmy.js",
-    "./modules/*": "./modules/*"
+    "./standalone": "./dist/simmy.js"
   },
   "sideEffects": [
     "./dist/index.js",
@@ -33,7 +31,9 @@
     "build": "rm -rf dist && vite build && vite build --mode standalone && tsc -p tsconfig.build.json && node scripts/copy-embed.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "host-modules": "node --experimental-strip-types scripts/host-modules.ts",
+    "publish-modules": "npm install --prefix modules-site && node --experimental-strip-types scripts/publish-modules.ts"
   },
   "peerDependencies": {
     "preact": "^10.29.0"

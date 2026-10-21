@@ -2,19 +2,21 @@
  * <simmy-app>: the simulator as a custom element. It renders into a shadow root,
  * so the host page's styles don't reach in and the simulator's don't leak out.
  *
- *   <simmy-app src="/modules/references.yaml"></simmy-app>
+ *   <simmy-app src="/hosted-modules/references-and-calculations/config.yaml"></simmy-app>
  *   <simmy-app><script type="text/yaml">…</script></simmy-app>
  *   el.module = { …already-parsed object… }
  *
- * Attributes: src, platform (mac | win | auto), autoplay ("false" turns it off),
- * history, fit-screen, chrome-offset (a CSS length, or a selector for a sticky
- * header to measure), fonts ("none" skips loading Carlito and Inter).
+ * Attributes: src, platform (mac | win | web | auto), mode (movie | kiosk; movie waits for
+ * Play and stops at the end, kiosk plays muted and loops), ribbon (open | collapsed),
+ * autoplay ("false" starts in control), history, fit-screen, chrome-offset (a CSS length,
+ * or a selector for a sticky header to measure), fonts ("none" skips loading Carlito and Inter).
  *
  * Events: simmy:ready (detail: module), simmy:graded (detail: grade
  * report), simmy:error (detail: error).
  */
 import { h, render } from "preact";
 import type { GradeReport } from "./module/grade.ts";
+import { resolveModuleAudio } from "./module/audio.ts";
 import { loadModule, ModuleError, parseModule } from "./module/parse.ts";
 import type { SimModule } from "./module/types.ts";
 import { SimContext } from "./ui/context.ts";
@@ -55,11 +57,13 @@ function dedent(text: string): string {
   return Number.isFinite(indent) ? lines.map((line) => line.slice(indent)).join("\n") : text;
 }
 
+const PLATFORMS: readonly Platform[] = ["mac", "win", "web"];
+
 // Importing the package on a server (to reach parseModule, say) must not trip over the missing DOM.
 const Base = (typeof HTMLElement === "undefined" ? class {} : HTMLElement) as typeof HTMLElement;
 
 export class SimmyElement extends Base {
-  static observedAttributes = ["src", "platform", "autoplay", "history", "fit-screen", "chrome-offset"];
+  static observedAttributes = ["src", "platform", "mode", "ribbon", "autoplay", "history", "fit-screen", "chrome-offset"];
 
   readonly #root: ShadowRoot;
   #module: SimModule | null = null;
@@ -137,15 +141,22 @@ export class SimmyElement extends Base {
       return;
     }
     try {
-      const text = inline
-        ? dedent(inline.textContent ?? "")
-        : await fetch(new URL(src as string, document.baseURI)).then((response) => {
-            if (!response.ok) {
-              throw new Error(`Couldn't load ${src} (${response.status} ${response.statusText})`);
-            }
-            return response.text();
-          });
-      const mod = await loadModule(text);
+      // A module loaded by URL can name clips as files in its audio folder.
+      // Inline YAML has no folder, so those names stay as written.
+      let text: string;
+      let moduleUrl: URL | null = null;
+      if (inline) {
+        text = dedent(inline.textContent ?? "");
+      } else {
+        moduleUrl = new URL(src as string, document.baseURI);
+        const response = await fetch(moduleUrl);
+        if (!response.ok) {
+          throw new Error(`Couldn't load ${src} (${response.status} ${response.statusText})`);
+        }
+        text = await response.text();
+      }
+      const parsed = await loadModule(text);
+      const mod = moduleUrl ? resolveModuleAudio(parsed, moduleUrl) : parsed;
       if (load === this.#load) {
         this.#setModule(mod);
       }
@@ -226,7 +237,9 @@ export class SimmyElement extends Base {
         // A new module is a new workbook: key on it so every bit of sheet state starts over.
         h(Simmy, {
           key: mod,
-          platform: platform === "mac" || platform === "win" ? (platform as Platform) : "auto",
+          platform: PLATFORMS.includes(platform as Platform) ? (platform as Platform) : "auto",
+          mode: this.getAttribute("mode") === "kiosk" ? "kiosk" : "movie",
+          ribbon: this.getAttribute("ribbon") === "collapsed" ? "collapsed" : "open",
           autoplay: this.getAttribute("autoplay") !== "false",
           history: this.hasAttribute("history"),
           fitScreen: this.hasAttribute("fit-screen"),

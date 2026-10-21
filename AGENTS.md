@@ -26,7 +26,7 @@ installed, so keep the two consistent:
   `TaskPane.tsx`, `autopilot.ts` (the auto demo), `styles.css`.
 - `src/element.ts`: the `<simmy-app>` custom element. It renders into a shadow root.
 - `src/index.ts`: the public exports. It also registers the element.
-- `modules/`: example modules. `embed/` and `examples/`: iframe wrapper and a plain-HTML example.
+- `hosted-modules/`: module sources (`<name>/config.yaml` and `<name>/audio/`). `modules-site/`: the Workers static-assets project that publishes them. `embed/` and `examples/`: iframe wrapper and a plain-HTML example.
 - `test/`: Vitest tests, one file per area.
 
 ## Commands

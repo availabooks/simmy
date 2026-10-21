@@ -43,7 +43,7 @@ describe("parseModule", () => {
     expect(mod.totalPoints).toBe(100);
     expect(mod.autopilot[0]).toMatchObject({
       kind: "hold",
-      audio: "/modules/narration/1.mp3",
+      audio: "1.mp3",
       transcript:
         "Peter's Pool Palace is having an end-of-season pool sale. All pools and pool supplies are 30% off, and you have decided to buy a pool.",
     });
@@ -54,13 +54,13 @@ describe("parseModule", () => {
       formula: "=C6*C$2",
       fill: undefined,
       finish: false,
-      audio: "/modules/narration/5.mp3",
+      audio: "5.mp3",
       transcript:
         "Multiply the regular price in cell C6 by the store discount in cell C$2. The dollar sign keeps C2 fixed when the formula is copied.",
     });
     expect(mod.autopilot.at(-1)).toEqual({
       kind: "submit",
-      audio: "/modules/narration/16.mp3",
+      audio: "16.mp3",
       transcript: "Press Next, then Submit Now to see your grade.",
     });
   });

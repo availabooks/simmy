@@ -20,6 +20,6 @@ export {
 export { DEFAULT_COPY, defaultAutopilot, loadModule, ModuleError, parseModule } from "./module/parse.ts";
 export type * from "./module/types.ts";
 export { SimContext, type SimContextValue } from "./ui/context.ts";
-export { detectPlatform, Simmy, type SimmyProps } from "./ui/Simmy.tsx";
+export { detectPlatform, Simmy, type SimmyMode, type SimmyProps } from "./ui/Simmy.tsx";
 
 defineSimmy();

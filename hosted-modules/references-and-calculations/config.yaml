@@ -139,26 +139,27 @@ note:
     - Click the wand to have a task done for you. Click it again to undo it.
     - Press Next, then Submit Now to see your grade.
 
-# Each line is its own clip. The clip loads when that line starts, and the cursor fits the action into it.
+# Each line is its own clip, named as a file in the audio folder next to this config.
+# Hosting rewrites those names to absolute URLs.
 autopilot:
-  - audio: /modules/narration/1.mp3
+  - audio: 1.mp3
     transcript: Peter's Pool Palace is having an end-of-season pool sale. All pools and pool supplies are 30% off, and you have decided to buy a pool.
-  - audio: /modules/narration/2.mp3
+  - audio: 2.mp3
     transcript: The items you need and their regular prices are listed on the Referencing Cells worksheet. Subtotal is already calculated. Finish the table, and copy any formula that can repeat, using relative and absolute references.
-  - { audio: /modules/narration/3.mp3, at: C2, transcript: "The store discount is 30%, in cell C2. The sales tax rate is in cell C3." }
-  - { task: A, audio: /modules/narration/4.mp3, transcript: Calculate the Discount in cell D6. }
-  - { task: A, type: =C6*C$2, at: D6, done: false, audio: /modules/narration/5.mp3, transcript: "Multiply the regular price in cell C6 by the store discount in cell C$2. The dollar sign keeps C2 fixed when the formula is copied." }
-  - { task: A, at: D6, fill: D6:D12, audio: /modules/narration/6.mp3, transcript: Copy the formula in cell D6 and paste it into cells D7 through D12. }
-  - { task: B, audio: /modules/narration/7.mp3, transcript: Calculate the sale price in cell E6. }
-  - { task: B, type: =C6-D6, at: E6, done: false, audio: /modules/narration/8.mp3, transcript: Subtract the discount in cell D6 from the regular price in cell C6. }
-  - { task: B, at: E6, fill: E6:E12, audio: /modules/narration/9.mp3, transcript: Copy the formula in cell E6 and paste it into cells E7 through E12. }
-  - { task: C, audio: /modules/narration/10.mp3, transcript: Calculate the sales tax in cell E15. }
-  - { task: C, type: =E14*C3, at: E15, audio: /modules/narration/11.mp3, transcript: Multiply the subtotal in cell E14 by the sales tax rate in cell C3. }
-  - { task: D, audio: /modules/narration/12.mp3, transcript: Calculate the total in cell E16. }
-  - { task: D, type: =E14+E15, at: E16, audio: /modules/narration/13.mp3, transcript: Add the sales tax in cell E15 to the subtotal in cell E14. }
-  - { task: A, audio: /modules/narration/14.mp3, transcript: Click a task in the Excel Educator pane to jump to its cell. }
-  - { task: B, doit: true, undo: true, done: false, audio: /modules/narration/15.mp3, transcript: "Click the wand to have a task done for you. Click it again to undo it." }
-  - { submit: true, audio: /modules/narration/16.mp3, transcript: "Press Next, then Submit Now to see your grade." }
+  - { audio: 3.mp3, at: C2, transcript: "The store discount is 30%, in cell C2. The sales tax rate is in cell C3." }
+  - { task: A, audio: 4.mp3, transcript: Calculate the Discount in cell D6. }
+  - { task: A, type: =C6*C$2, at: D6, done: false, audio: 5.mp3, transcript: "Multiply the regular price in cell C6 by the store discount in cell C$2. The dollar sign keeps C2 fixed when the formula is copied." }
+  - { task: A, at: D6, fill: D6:D12, audio: 6.mp3, transcript: Copy the formula in cell D6 and paste it into cells D7 through D12. }
+  - { task: B, audio: 7.mp3, transcript: Calculate the sale price in cell E6. }
+  - { task: B, type: =C6-D6, at: E6, done: false, audio: 8.mp3, transcript: Subtract the discount in cell D6 from the regular price in cell C6. }
+  - { task: B, at: E6, fill: E6:E12, audio: 9.mp3, transcript: Copy the formula in cell E6 and paste it into cells E7 through E12. }
+  - { task: C, audio: 10.mp3, transcript: Calculate the sales tax in cell E15. }
+  - { task: C, type: =E14*C3, at: E15, audio: 11.mp3, transcript: Multiply the subtotal in cell E14 by the sales tax rate in cell C3. }
+  - { task: D, audio: 12.mp3, transcript: Calculate the total in cell E16. }
+  - { task: D, type: =E14+E15, at: E16, audio: 13.mp3, transcript: Add the sales tax in cell E15 to the subtotal in cell E14. }
+  - { task: A, audio: 14.mp3, transcript: Click a task in the Excel Educator pane to jump to its cell. }
+  - { task: B, doit: true, undo: true, done: false, audio: 15.mp3, transcript: "Click the wand to have a task done for you. Click it again to undo it." }
+  - { submit: true, audio: 16.mp3, transcript: "Press Next, then Submit Now to see your grade." }
 
 poster:
   range: B5:E9

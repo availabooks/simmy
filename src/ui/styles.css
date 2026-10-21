@@ -38,12 +38,24 @@ button:focus-visible {
 }
 
 /*
- * With fit-screen, the desktop is sized to the screen under the host's sticky header
- * (--chrome-h, set by the element; 0px without one), so the whole simulation fits on screen.
+ * With fit-screen, the whole simulation (heading, toolbar, desktop and the playback bar along
+ * its bottom) fits the screen under the host's sticky header (--chrome-h, set by the element;
+ * 0px without one). The desktop takes what the heading leaves. On a very short screen it stops
+ * at --simmy-min-height and the page scrolls instead: 600px keeps the Mac desktop's Excel window
+ * at its own minimum size.
  */
-.xd.is-fit .xd-desktop {
+.xd.is-fit {
+  display: flex;
+  flex-direction: column;
   height: calc(100svh - var(--chrome-h, 0px) - 24px);
-  min-height: 560px;
+  /* Grow past the screen rather than let a desktop at its minimum spill out over the page below. */
+  min-height: min-content;
+}
+
+.xd.is-fit .xd-desktop {
+  flex: 1 1 0;
+  height: auto;
+  min-height: var(--simmy-min-height, 600px);
   max-height: 940px;
 }
 
@@ -73,6 +85,11 @@ button:focus-visible {
 .xd[data-platform="mac"] {
   --ui-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
   --xd-chrome: #f6f6f6;
+}
+
+/* Excel on its own takes the visitor's own system font rather than one OS's. */
+.xd[data-platform="web"] {
+  --ui-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 .xd-toolbar {
@@ -299,15 +316,81 @@ button:focus-visible {
   opacity: 0.7;
 }
 
+/* A compact chip ("1×", "1.5×") without the browser's arrow. It still opens the native menu. */
 .xd-transport-speed {
+  width: 40px;
   height: 32px;
-  padding: 0 4px;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
   background: rgb(255 255 255 / 0.08);
   font: 700 13px/1 var(--font-sans);
+  text-align: center;
+  text-align-last: center;
 }
 
 .xd-transport-speed option {
   color: #111;
+}
+
+/* Movie mode's settings: the desktop switcher and Start over, in a panel over the end of the bar. */
+.xd-settings {
+  margin-left: 2px;
+}
+
+.xd-settings-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 3;
+  display: grid;
+  width: max-content;
+  gap: 10px;
+  justify-items: start;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 10px;
+  background: rgb(22 26 24 / 0.97);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.35);
+  color: #fff;
+}
+
+.xd-settings-label {
+  font: 600 11px/1 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.xd-settings-panel .xd-platform {
+  border-color: rgb(255 255 255 / 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.xd-settings-panel .xd-platform button,
+.xd-settings-panel .xd-reset {
+  padding: 7px 12px;
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.xd-settings-panel .xd-platform button:not(.is-on):hover,
+.xd-settings-panel .xd-reset:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+
+.xd-settings-panel .xd-reset {
+  border-color: rgb(255 255 255 / 0.2);
+  border-radius: 6px;
+  background: transparent;
+}
+
+.xd-phone .xd-settings-panel {
+  top: calc(100% + 8px);
+  bottom: auto;
 }
 
 /* ---------------------------------------------------------------- desktop */
@@ -340,6 +423,11 @@ button:focus-visible {
     radial-gradient(70% 70% at 30% 75%, #1f6fd8 0%, transparent 70%),
     radial-gradient(60% 60% at 75% 30%, #3b8ee8 0%, transparent 70%),
     linear-gradient(180deg, #0b3a8c, #0a2a6b);
+}
+
+/* No desktop: Excel fills the stage, and only shows through before it lays out. */
+.xd-desktop-web {
+  background: #f5f5f5;
 }
 
 .xd-menubar {
@@ -378,15 +466,15 @@ button:focus-visible {
 .xd-dock {
   position: absolute;
   left: 50%;
-  bottom: calc(8px + var(--xd-transport, 46px));
+  bottom: calc(6px + var(--xd-transport, 46px));
   z-index: 60;
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  padding: 6px 10px 2px;
+  gap: 6px;
+  padding: 4px 8px 2px;
   transform: translateX(-50%);
   border: 1px solid rgb(255 255 255 / 0.35);
-  border-radius: 18px;
+  border-radius: 14px;
   background: rgb(255 255 255 / 0.26);
   backdrop-filter: blur(24px) saturate(1.6);
   -webkit-backdrop-filter: blur(24px) saturate(1.6);
@@ -430,9 +518,9 @@ button:focus-visible {
 .xd-tile {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 11px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
 }
 
@@ -442,11 +530,11 @@ button:focus-visible {
 
 .xd-tile-notes {
   display: block;
-  width: 46px;
-  height: 46px;
-  border-radius: 11px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
   background:
-    repeating-linear-gradient(180deg, transparent 0 9px, rgb(160 130 20 / 0.25) 9px 10px) 8px 14px / 30px 24px
+    repeating-linear-gradient(180deg, transparent 0 7px, rgb(160 130 20 / 0.25) 7px 8px) 6px 11px / 24px 19px
       no-repeat,
     linear-gradient(#fff7b0, #f5d742);
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
@@ -465,7 +553,7 @@ button:focus-visible {
 
 .xd-tile-trash {
   background:
-    repeating-linear-gradient(90deg, transparent 0 5px, rgb(0 0 0 / 0.08) 5px 6px) 12px 10px / 22px 28px
+    repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.08) 4px 5px) 9px 8px / 18px 22px
       no-repeat,
     linear-gradient(#fafafa, #d6d6d6);
 }
@@ -483,8 +571,8 @@ button:focus-visible {
 .xd-dock-sep {
   align-self: center;
   width: 1px;
-  height: 40px;
-  margin-bottom: 8px;
+  height: 30px;
+  margin-bottom: 7px;
   background: rgb(0 0 0 / 0.18);
 }
 
@@ -626,6 +714,29 @@ button:focus-visible {
 
 .xd-window.is-max .xd-resize {
   display: none;
+}
+
+/* Brings a closed note back where there is no dock or taskbar to do it. */
+.xd-note-reopen {
+  position: absolute;
+  left: 44px;
+  bottom: calc(var(--xd-transport, 46px) + 64px); /* above the sheet tabs and the status bar */
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 6px;
+  border: 1px solid rgb(0 0 0 / 0.14);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+  color: var(--xd-text);
+  font: 600 12px/1.2 var(--ui-font);
+  cursor: pointer;
+}
+
+.xd-note-reopen:hover {
+  background: #f5f5f5;
 }
 
 /* Sticky note */
@@ -1053,6 +1164,24 @@ button:focus-visible {
   background: #c42b1c;
 }
 
+/* Excel on its own: a plain app bar with nothing from an OS or an account. */
+.xd-web .xd-titlebar {
+  height: 36px;
+  border-bottom: 1px solid var(--xd-line);
+  background: var(--xd-chrome);
+  color: var(--xd-text);
+}
+
+.xd-web .xd-qbtn:hover:not(:disabled) {
+  background: rgb(0 0 0 / 0.07);
+}
+
+.xd-web .xd-title {
+  padding-right: 90px; /* the glyph and Undo's width, so the name sits in the middle */
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* Ribbon tabs */
 
 .xd-tabs {
@@ -1084,8 +1213,26 @@ button:focus-visible {
   background: rgb(0 0 0 / 0.05);
 }
 
+
 .xd-tab.is-idle {
   cursor: default;
+}
+
+/*
+ * Anything drawn from Excel that the simulator doesn't run (most of the ribbon, the other tabs,
+ * AutoSave, Search, the zoom slider) is dimmed and stays still under the pointer, so students
+ * can see at a glance what will respond.
+ */
+.xd-excel .is-idle {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.xd-excel .xd-tab.is-idle:hover,
+.xd-excel .xd-big.is-idle:hover,
+.xd-excel .xd-small.is-idle:hover,
+.xd-excel .xd-qbtn.is-idle:hover {
+  background: none;
 }
 
 .xd-tab.is-active {
@@ -1127,11 +1274,54 @@ button:focus-visible {
 
 /* Ribbon */
 
+/* The tabs and the ribbon under them. A collapsed ribbon leaves the tabs, and shows over the sheet on demand. */
+.xd-ribbon-area {
+  position: relative;
+  flex: none;
+}
+
+.xd-ribbon-area.is-collapsed .xd-tabs {
+  border-bottom: 1px solid var(--xd-line);
+}
+
+.xd-ribbon-area.is-peek {
+  z-index: 40;
+}
+
+.xd-ribbon-area.is-peek .xd-ribbon {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  box-shadow: 0 8px 18px rgb(0 0 0 / 0.18);
+}
+
+.xd-ribbon-toggle {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: #505050;
+  cursor: pointer;
+}
+
+.xd-ribbon-toggle:hover {
+  background: rgb(0 0 0 / 0.08);
+}
+
 .xd-ribbon {
+  position: relative;
   display: flex;
   flex: none;
   height: 96px;
-  padding: 2px 4px 0;
+  padding: 2px 26px 0 4px; /* the right side leaves room for the collapse button */
   border-bottom: 1px solid var(--xd-line);
   background: var(--xd-chrome);
 }
@@ -2798,11 +2988,89 @@ button:focus-visible {
   line-height: 1.45;
 }
 
+/* Movie mode's opening screen: the desktop darkened, Play in the middle, the playback bar left clear. */
+.xd-intro {
+  position: absolute;
+  inset: 0 0 var(--xd-transport, 46px);
+  z-index: 190;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgb(10 14 12 / 0.62);
+  font-family: var(--ui-font);
+  animation: xd-intro-in 240ms ease-out;
+}
+
+.xd-phone-body .xd-intro {
+  inset: 0;
+}
+
+@keyframes xd-intro-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.xd-intro-play,
+.xd-intro-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  cursor: pointer;
+}
+
+.xd-intro-play {
+  justify-content: center;
+  width: 88px;
+  height: 88px;
+  padding: 0 0 0 6px; /* the triangle's weight sits left of its box */
+  border-radius: 50%;
+  background: var(--excel-green);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
+  color: #fff;
+}
+
+.xd-intro-play svg {
+  width: 40px;
+  height: 40px;
+}
+
+.xd-intro-play:hover {
+  background: var(--excel-green-dark);
+}
+
+/* Dark enough to read over whatever window sits behind it, the yellow note included. */
+.xd-intro-control {
+  padding: 8px 16px;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  border-radius: 6px;
+  background: rgb(16 20 18 / 0.82);
+  color: #fff;
+  font: 600 14px/1.2 var(--ui-font);
+}
+
+.xd-intro-control:hover {
+  background: rgb(40 46 43 / 0.92);
+}
+
+.xd-intro-play:focus-visible,
+.xd-intro-control:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .xd-window,
   .xd-dock-item,
   .ee-bar-fill {
     transition: none;
+  }
+
+  .xd-intro {
+    animation: none;
   }
 
   .xd-ants,

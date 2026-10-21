@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "simmy-modules",
+  "compatibility_date": "2026-10-21",
+  "workers_dev": true,
+  // The directory is filled by `npm run publish-modules` in the repo root.
+  // Clip URLs inside the YAML are absolute and must match simmyOrigin in package.json.
+  "assets": {
+    "directory": "../host-dist",
+    "not_found_handling": "none"
+  }
+}

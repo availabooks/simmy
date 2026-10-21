@@ -1,7 +1,11 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
-export type Platform = "mac" | "win";
+/**
+ * Which Excel to look like. "mac" and "win" are the desktop apps on their desktops. "web" is
+ * Excel on its own, filling the stage the way it fills a browser tab, with nothing from any OS.
+ */
+export type Platform = "mac" | "win" | "web";
 export type RibbonTab = "Home" | "Formulas";
 
 const TABS_WIN = [
@@ -17,6 +21,8 @@ const TABS_WIN = [
   "Help",
 ];
 const TABS_MAC = ["Home", "Insert", "Draw", "Page Layout", "Formulas", "Data", "Review", "View"];
+const TABS_WEB = ["Home", "Insert", "Page Layout", "Formulas", "Data", "Review", "View"];
+const TABS: Record<Platform, string[]> = { mac: TABS_MAC, win: TABS_WIN, web: TABS_WEB };
 
 export const AUTOSUM_ITEMS: { label: string; fn: string }[] = [
   { label: "Sum", fn: "SUM" },
@@ -46,6 +52,10 @@ export type RibbonProps = {
   onTab: (tab: RibbonTab) => void;
   numberFormat: string;
   paneOpen: boolean;
+  /** The ribbon is collapsed and showing over the sheet for now, so its corner button pins it open. */
+  collapsed: boolean;
+  /** Collapse the ribbon to its tabs, or pin it open again. */
+  onToggleRibbon: () => void;
   onTogglePane: () => void;
   onInsertFunction: (fn: string) => void;
   onStartFormula: () => void;
@@ -56,8 +66,14 @@ export type RibbonProps = {
   onFillDown: () => void;
 };
 
-export function RibbonTabs({ platform, tab, onTab }: Pick<RibbonProps, "platform" | "tab" | "onTab">) {
-  const tabs = platform === "mac" ? TABS_MAC : TABS_WIN;
+/** The tab row. `tab` is null while the ribbon is collapsed, so no tab shows as selected. */
+export function RibbonTabs({
+  platform,
+  tab,
+  onTab,
+  onToggleRibbon,
+}: Pick<RibbonProps, "platform" | "onTab" | "onToggleRibbon"> & { tab: RibbonTab | null }) {
+  const tabs = TABS[platform];
   return (
     <div class="xd-tabs" role="tablist">
       {tabs.map((name) => {
@@ -70,31 +86,56 @@ export function RibbonTabs({ platform, tab, onTab }: Pick<RibbonProps, "platform
             aria-selected={name === tab}
             class={`xd-tab${name === tab ? " is-active" : ""}${live ? "" : " is-idle"}`}
             onClick={() => live && onTab(name as RibbonTab)}
+            onDblClick={onToggleRibbon}
           >
             {name}
           </button>
         );
       })}
       <span class="xd-tabs-spacer" />
-      <span class="xd-tab-side">
-        <Svg w={16}>
-          <path d="M3 4h10v7H7l-3 3v-3H3z" fill="none" stroke="currentColor" />
-        </Svg>
-        Comments
-      </span>
-      <span class="xd-share">
-        <Svg w={16}>
-          <path d="M8 2v8M5 5l3-3 3 3M3 9v4h10V9" fill="none" stroke="currentColor" stroke-width="1.2" />
-        </Svg>
-        Share
-      </span>
+      {platform !== "web" && (
+        <>
+          <span class="xd-tab-side is-idle">
+            <Svg w={16}>
+              <path d="M3 4h10v7H7l-3 3v-3H3z" fill="none" stroke="currentColor" />
+            </Svg>
+            Comments
+          </span>
+          <span class="xd-share is-idle">
+            <Svg w={16}>
+              <path d="M8 2v8M5 5l3-3 3 3M3 9v4h10V9" fill="none" stroke="currentColor" stroke-width="1.2" />
+            </Svg>
+            Share
+          </span>
+        </>
+      )}
     </div>
   );
 }
 
 export function Ribbon(props: RibbonProps) {
+  const toggleTitle = props.collapsed ? "Pin the Ribbon (Ctrl+F1)" : "Collapse the Ribbon (Ctrl+F1)";
   return (
     <div class="xd-ribbon">
+      <button
+        type="button"
+        class="xd-ribbon-toggle"
+        title={toggleTitle}
+        aria-label={toggleTitle}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={props.onToggleRibbon}
+      >
+        <Svg w={12}>
+          {props.collapsed ? (
+            <path
+              d="M10 1.5l4.5 4.5-1.6.6-2.4 2.4.2 3-1 1-2.7-2.7-4 4-.7-.7 4-4L3.6 6.9l1-1 3 .2 2.4-2.4z"
+              fill="currentColor"
+            />
+          ) : (
+            <path d="M4 13l6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" />
+          )}
+        </Svg>
+      </button>
       <div class="xd-ribbon-groups">
         {props.tab === "Home" ? <HomeGroups {...props} /> : <FormulaGroups {...props} />}
       </div>
@@ -148,8 +189,8 @@ function HomeGroups(props: RibbonProps) {
       <Group label="Font">
         <div class="xd-font">
           <div class="xd-row">
-            <span class="xd-select xd-select-font">Calibri (Body)</span>
-            <span class="xd-select xd-select-size">11</span>
+            <span class="xd-select xd-select-font is-idle">Calibri (Body)</span>
+            <span class="xd-select xd-select-size is-idle">11</span>
             <SmallButton title="Increase Font Size">
               <span class="xd-glyph">
                 A<sup>^</sup>
@@ -569,8 +610,9 @@ function BigButton({
   return (
     <button
       type="button"
-      class={`xd-big${active ? " is-active" : ""}`}
-      title={title ?? label}
+      class={`xd-big${active ? " is-active" : ""}${onClick ? "" : " is-idle"}`}
+      title={idleTitle(title ?? label, onClick)}
+      aria-disabled={onClick ? undefined : "true"}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
     >
@@ -601,8 +643,9 @@ function SmallButton({
   return (
     <button
       type="button"
-      class={`xd-small${active ? " is-active" : ""}`}
-      title={title}
+      class={`xd-small${active ? " is-active" : ""}${onClick ? "" : " is-idle"}`}
+      title={idleTitle(title, onClick)}
+      aria-disabled={onClick ? undefined : "true"}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
     >
@@ -611,6 +654,11 @@ function SmallButton({
       {dropdown && <Caret />}
     </button>
   );
+}
+
+/** The simulator draws all of Excel's ribbon but runs only part of it. The rest says so when hovered. */
+function idleTitle(title: string, onClick: (() => void) | undefined): string {
+  return onClick ? title : `${title} (not available here)`;
 }
 
 function Caret() {

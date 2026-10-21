@@ -150,6 +150,8 @@ function typedFunctionPrefix(text: string, caret: number): string | null {
 export type WorkbookProps = {
   platform: Platform;
   resetKey: number;
+  /** Start with the ribbon collapsed to its tabs. The visitor can still expand it. */
+  ribbonCollapsed?: boolean;
   maximized: boolean;
   onTitlePointerDown: (event: TargetedPointerEvent<HTMLElement>) => void;
   onMinimize: () => void;
@@ -179,6 +181,9 @@ export function Workbook(props: WorkbookProps) {
   const [alert, setAlert] = useState<string | null>(null);
   const [paneOpen, setPaneOpen] = useState(true);
   const [tab, setTab] = useState<RibbonTab>("Home");
+  const [ribbonCollapsed, setRibbonCollapsed] = useState(props.ribbonCollapsed ?? false);
+  // A collapsed ribbon shows over the sheet while the visitor uses one of its tabs, as in Excel.
+  const [ribbonPeek, setRibbonPeek] = useState(false);
   const [suggest, setSuggest] = useState(0);
   const [caret, setCaret] = useState(0);
   const [paneKey, setPaneKey] = useState(0);
@@ -197,6 +202,11 @@ export function Workbook(props: WorkbookProps) {
   const values = useMemo(() => evaluateSheet(book.inputs), [book.inputs]);
   const selRange = normalizeRange(sel.anchor, sel.focus);
   const active = sel.anchor;
+
+  useEffect(() => {
+    setRibbonCollapsed(props.ribbonCollapsed ?? false);
+    setRibbonPeek(false);
+  }, [props.ribbonCollapsed]);
 
   useEffect(() => {
     if (props.resetKey === 0) {
@@ -976,8 +986,43 @@ export function Workbook(props: WorkbookProps) {
   const editBox = edit ? box(normalizeRange(edit.addr, edit.addr)) : null;
   const editStyle = edit ? styles[addrName(edit.addr)] : undefined;
 
+  const toggleRibbon = () => {
+    setRibbonCollapsed(!ribbonCollapsed);
+    setRibbonPeek(false);
+  };
+  const chooseTab = (next: RibbonTab) => {
+    setTab(next);
+    if (ribbonCollapsed) {
+      // A second click on the tab that is showing puts the ribbon away again.
+      setRibbonPeek(!(ribbonPeek && next === tab));
+    }
+  };
+  /** A ribbon command. One run from a ribbon shown over the sheet puts it away, as in Excel. */
+  const command =
+    <A extends unknown[]>(run: (...args: A) => void) =>
+    (...args: A) => {
+      setRibbonPeek(false);
+      run(...args);
+    };
+  const ribbonShown = !ribbonCollapsed || ribbonPeek;
+
   return (
-    <div class={`xd-excel xd-${platform}`}>
+    <div
+      class={`xd-excel xd-${platform}`}
+      onPointerDownCapture={(event) => {
+        if (ribbonPeek && !(event.target instanceof Element && event.target.closest(".xd-ribbon-area"))) {
+          setRibbonPeek(false);
+        }
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.key === "F1" && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          toggleRibbon();
+        } else if (event.key === "Escape" && ribbonPeek) {
+          setRibbonPeek(false);
+        }
+      }}
+    >
       <TitleBar
         {...props}
         canUndo={book.past.length > 0}
@@ -985,22 +1030,33 @@ export function Workbook(props: WorkbookProps) {
         onUndo={undo}
         onRedo={redo}
       />
-      <RibbonTabs platform={platform} tab={tab} onTab={setTab} />
-      <Ribbon
-        platform={platform}
-        tab={tab}
-        onTab={setTab}
-        numberFormat={formatName(styles[activeKey])}
-        paneOpen={paneOpen}
-        onTogglePane={() => setPaneOpen(!paneOpen)}
-        onInsertFunction={insertFunction}
-        onStartFormula={() => (edit ? undefined : startEdit("=", "enter"))}
-        onCopy={() => copy()}
-        onCut={() => copy(true)}
-        onPaste={paste}
-        onClear={clear}
-        onFillDown={() => fill("down")}
-      />
+      <div class={`xd-ribbon-area${ribbonCollapsed ? " is-collapsed" : ""}${ribbonPeek ? " is-peek" : ""}`}>
+        <RibbonTabs
+          platform={platform}
+          tab={ribbonShown ? tab : null}
+          onTab={chooseTab}
+          onToggleRibbon={toggleRibbon}
+        />
+        {ribbonShown && (
+          <Ribbon
+            platform={platform}
+            tab={tab}
+            onTab={setTab}
+            numberFormat={formatName(styles[activeKey])}
+            paneOpen={paneOpen}
+            collapsed={ribbonCollapsed}
+            onToggleRibbon={toggleRibbon}
+            onTogglePane={command(() => setPaneOpen(!paneOpen))}
+            onInsertFunction={command(insertFunction)}
+            onStartFormula={command(() => (edit ? undefined : startEdit("=", "enter")))}
+            onCopy={command(() => copy())}
+            onCut={command(() => copy(true))}
+            onPaste={command(paste)}
+            onClear={command(clear)}
+            onFillDown={command(() => fill("down"))}
+          />
+        )}
+      </div>
       <div class="xd-formula-bar">
         <div class="xd-namebox">
           <input
@@ -1245,7 +1301,7 @@ export function Workbook(props: WorkbookProps) {
             {stats.sum !== undefined && <span>Sum: {statusNumber(stats.sum)}</span>}
           </span>
         )}
-        <span class="xd-views" aria-hidden="true">
+        <span class="xd-views is-idle" aria-hidden="true">
           <span class="is-on">
             <Svg w={14}>
               <rect x="3" y="4" width="14" height="12" fill="none" stroke="currentColor" />
@@ -1271,7 +1327,7 @@ export function Workbook(props: WorkbookProps) {
             </Svg>
           </span>
         </span>
-        <span class="xd-zoom" aria-hidden="true">
+        <span class="xd-zoom is-idle" aria-hidden="true">
           <span>−</span>
           <span class="xd-zoom-track">
             <span class="xd-zoom-thumb" />
@@ -1320,7 +1376,7 @@ export function Workbook(props: WorkbookProps) {
 function SheetTabs({ name }: { name: string }) {
   return (
     <div class="xd-sheet-tabs">
-      <span class="xd-sheet-nav" aria-hidden="true">
+      <span class="xd-sheet-nav is-idle" aria-hidden="true">
         <Svg w={12}>
           <path d="M12 5l-5 5 5 5" fill="none" stroke="#9b9b9b" stroke-width="1.6" />
         </Svg>
@@ -1329,7 +1385,7 @@ function SheetTabs({ name }: { name: string }) {
         </Svg>
       </span>
       <span class="xd-sheet-tab is-active">{name}</span>
-      <span class="xd-sheet-add" title="New sheet" aria-hidden="true">
+      <span class="xd-sheet-add is-idle" title="New sheet (not available here)" aria-hidden="true">
         <Svg w={14}>
           <circle cx="10" cy="10" r="7.5" fill="none" stroke="#616161" />
           <path d="M10 6.5v7M6.5 10h7" stroke="#616161" />
@@ -1362,11 +1418,11 @@ function TitleBar(props: TitleBarProps) {
   );
   const quick = (
     <span class="xd-quick" onPointerDown={stop}>
-      <span class="xd-autosave">
+      <span class="xd-autosave is-idle">
         AutoSave
         <span class="xd-switch" />
       </span>
-      <span class="xd-qbtn" title="Save">
+      <span class="xd-qbtn is-idle" title="Save (not available here)">
         <Svg w={16}>
           <path
             d="M4 3h10l3 3v11H4z M7 3v4h6V3 M7 17v-5h7v5"
@@ -1384,6 +1440,29 @@ function TitleBar(props: TitleBarProps) {
       </button>
     </span>
   );
+  const undoRedo = (
+    <span class="xd-quick" onPointerDown={stop}>
+      <button type="button" class="xd-qbtn" title="Undo" disabled={!props.canUndo} onClick={props.onUndo}>
+        {undoIcon}
+      </button>
+      <button type="button" class="xd-qbtn" title="Redo" disabled={!props.canRedo} onClick={props.onRedo}>
+        {redoIcon}
+      </button>
+    </span>
+  );
+  // The web view fills the stage, so there is no window to move, shrink or close: just the app's
+  // name, the workbook and Undo, nothing an OS or a Microsoft account adds.
+  if (platform === "web") {
+    return (
+      <div class="xd-titlebar">
+        <span class="xd-app-glyph" aria-hidden="true">
+          <ExcelGlyph size={16} />
+        </span>
+        {undoRedo}
+        <span class="xd-title">{workbookName}</span>
+      </div>
+    );
+  }
   if (platform === "mac") {
     return (
       <div class="xd-titlebar" onPointerDown={props.onTitlePointerDown} onDblClick={props.onMaximize}>
@@ -1394,7 +1473,7 @@ function TitleBar(props: TitleBarProps) {
         </span>
         {quick}
         <span class="xd-title">{workbookName}</span>
-        <span class="xd-search" onPointerDown={stop}>
+        <span class="xd-search is-idle" onPointerDown={stop}>
           <Svg w={13}>
             <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5" />
             <path d="M12 12l5 5" stroke="currentColor" stroke-width="1.5" />
@@ -1416,7 +1495,7 @@ function TitleBar(props: TitleBarProps) {
           <path d="M5 8l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6" />
         </Svg>
       </span>
-      <span class="xd-search" onPointerDown={stop}>
+      <span class="xd-search is-idle" onPointerDown={stop}>
         <Svg w={13}>
           <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5" />
           <path d="M12 12l5 5" stroke="currentColor" stroke-width="1.5" />

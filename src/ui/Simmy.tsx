@@ -31,15 +31,30 @@ const MIN_SIZE: Record<WinId, { w: number; h: number }> = {
 /** Height of the playback bar along the bottom of the desktop. */
 const TRANSPORT = 46;
 
+/** The switcher's names for each platform, in the order it lists them. */
+const PLATFORM_LABELS: Record<Platform, string> = {
+  mac: "macOS",
+  win: "Windows",
+  web: "Web",
+};
+
+/** macOS and Windows put Excel in a window on a desktop. The web view has only Excel. */
+const isDesktop = (platform: Platform) => platform === "mac" || platform === "win";
+
 /** Space the menu bar, the playback bar, and the dock (or the taskbar) take from the desktop. */
 function insets(platform: Platform) {
-  return platform === "mac" ? { top: 26, bottom: 74 + TRANSPORT } : { top: 0, bottom: 48 + TRANSPORT };
+  if (platform === "mac") {
+    return { top: 26, bottom: 60 + TRANSPORT };
+  }
+  return { top: 0, bottom: (platform === "win" ? 48 : 0) + TRANSPORT };
 }
 
 function initialWins(platform: Platform, width: number, height: number): Wins {
   const { top, bottom } = insets(platform);
   const excelH = height - top - bottom - 20;
+  const desktop = isDesktop(platform);
   return {
+    // Without a desktop, Excel fills the stage the way a browser tab or a full-screen app does.
     excel: {
       x: 20,
       y: top + 12,
@@ -47,7 +62,7 @@ function initialWins(platform: Platform, width: number, height: number): Wins {
       h: excelH,
       open: true,
       min: false,
-      max: false,
+      max: !desktop,
     },
     // Over the empty columns right of the order table, clear of the task pane.
     notes: {
@@ -108,14 +123,23 @@ function lockSelection(): () => void {
 /** The phone layout: a small screen, or a landscape phone too short for a desktop. */
 const PHONE_QUERY = "(max-width: 759px), (max-height: 520px) and (pointer: coarse)";
 
+export type SimmyMode = "movie" | "kiosk";
+
 export type SimmyProps = {
-  /** The desktop to show. "auto" (the default) matches the visitor's computer. */
+  /** The desktop to show: mac, win or web. "auto" (the default) matches the visitor's computer, mac or win. */
   platform?: Platform | "auto";
-  /** Run the auto demo. Off for people who ask for less motion. The bar can pause it and resume from the same moment. */
+  /**
+   * "movie" (the default) waits behind a darkened Play / Take control screen and stops at the end.
+   * "kiosk" plays by itself, muted, and loops.
+   */
+  mode?: SimmyMode;
+  /** false starts with the visitor in control (and, in movie mode, without the Play screen). */
   autoplay?: boolean;
+  /** "open" (the default) starts with the full ribbon; "collapsed" starts with only its tabs. The visitor can switch. */
+  ribbon?: "open" | "collapsed";
   /** On a phone, let the browser's Back button close the full-screen view. */
   history?: boolean;
-  /** Size the desktop to the screen, less the host's sticky header (the `--chrome-h` property). */
+  /** Fit the whole simulator, playback bar included, to the screen less the host's sticky header (`--chrome-h`), down to `--simmy-min-height`. */
   fitScreen?: boolean;
   /** The host's own heading, shown above the desktop beside the toolbar. */
   head?: ComponentChildren;
@@ -154,8 +178,37 @@ function NarrationNote({
   );
 }
 
-export function Simmy({ platform: platformProp = "auto", autoplay = true, history = false, fitScreen = false, head }: SimmyProps) {
+/** Movie mode's opening screen: the desktop darkened behind a Play button, with Take control beside it. */
+function Intro({ onPlay, onTakeControl }: { onPlay: () => void; onTakeControl: () => void }) {
+  return (
+    <div class="xd-intro" role="group" aria-label="Start the demo">
+      <button type="button" class="xd-intro-play" title="Play" aria-label="Play" onClick={onPlay}>
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M6 3.5v13l11-6.5z" fill="currentColor" />
+        </svg>
+      </button>
+      <button type="button" class="xd-intro-control" onClick={onTakeControl}>
+        <CursorMark size={16} />
+        Take control
+      </button>
+    </div>
+  );
+}
+
+export function Simmy({
+  platform: platformProp = "auto",
+  mode = "movie",
+  autoplay = true,
+  ribbon = "open",
+  history = false,
+  fitScreen = false,
+  head,
+}: SimmyProps) {
   const { module: mod } = useSim();
+  const movie = mode === "movie";
+  // Movie mode waits for Play; kiosk mode starts on its own unless told not to.
+  const starts = !movie && autoplay;
+  const offersIntro = movie && autoplay;
   const [platform, setPlatform] = useState<Platform>(platformProp === "auto" ? "win" : platformProp);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [wins, setWins] = useState<Wins | null>(null);
@@ -164,10 +217,12 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   const [pinned, setPinned] = useState(true);
   const [note, setNote] = useState<NoteMessage | null>(null);
   const [clock, setClock] = useState<Date | null>(null);
-  const [session, setSession] = useState(true);
-  const [hold, setHold] = useState<Hold>("play");
+  const [session, setSession] = useState(starts);
+  const [hold, setHold] = useState<Hold>(starts ? "play" : "control");
+  const [intro, setIntro] = useState(offersIntro);
   const [rate, setRate] = useState(1);
-  const [muted, setMuted] = useState(false);
+  // A kiosk plays to a room that didn't ask for sound.
+  const [muted, setMuted] = useState(!movie);
   const [elapsed, setElapsed] = useState(0);
   const [total, setTotal] = useState(0);
   const [timelineReady, setTimelineReady] = useState(false);
@@ -176,7 +231,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   const [apiReady, setApiReady] = useState(false);
   const [phone, setPhone] = useState(false);
   const [open, setOpen] = useState(false);
-  const [calm, setCalm] = useState(false);
+  const [calm, setCalm] = useState(!starts);
   const [line, setLine] = useState(-1);
   const [needsPlay, setNeedsPlay] = useState(false);
   const desktopRef = useRef<HTMLDivElement>(null);
@@ -189,8 +244,8 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   const activeLineRef = useRef<HTMLParagraphElement>(null);
   const onScreen = useRef(true);
   const playbackRef = useRef(new Playback());
-  const mutedRef = useRef(false);
-  const holdRef = useRef<Hold>("play");
+  const mutedRef = useRef(!movie);
+  const holdRef = useRef<Hold>(starts ? "play" : "control");
   const launchRef = useRef<{ index: number; offset: number; rush?: boolean } | null>(null);
   const skipRef = useRef({ index: 0, offset: 0, rush: false });
   const scrubWait = useRef(0);
@@ -211,16 +266,21 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
     return () => window.clearInterval(timer);
   }, []);
 
-  // Auto mode is the default. People who ask for less motion start in control.
+  // Movie mode waits for Play. A kiosk starts on its own, except for people who ask for less motion.
   useEffect(() => {
-    const reduced = !autoplay || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduced = !starts || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     setCalm(reduced);
     const next: Hold = reduced ? "control" : "play";
     holdRef.current = next;
     setHold(next);
     setSession(!reduced);
+    setIntro(offersIntro);
     playbackRef.current.setHold(next);
-  }, [autoplay]);
+  }, [starts, offersIntro]);
+  useEffect(() => {
+    mutedRef.current = !movie;
+    setMuted(!movie);
+  }, [movie]);
 
   useEffect(() => {
     const query = window.matchMedia(PHONE_QUERY);
@@ -263,6 +323,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
     holdRef.current = next;
     setHold(next);
     setSession(!calm);
+    setIntro(offersIntro);
     playbackRef.current.setHold(next);
     stopRef.current();
     setResetKey((k) => k + 1);
@@ -540,8 +601,17 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
           }
         },
       });
-      if (!stopped) {
-        cursor.classList.remove("is-on");
+      if (stopped) {
+        return;
+      }
+      cursor.classList.remove("is-on");
+      if (movie) {
+        // A movie ends on the finished sheet and hands it to the visitor. Play starts it over.
+        holdRef.current = "control";
+        setHold("control");
+        playback.setHold("control");
+        setSession(false);
+      } else {
         window.setTimeout(() => !stopped && setResetKey((k) => k + 1), 600);
       }
     };
@@ -561,7 +631,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
       cursor.classList.remove("is-on", "is-down");
       api.cancelAll();
     };
-  }, [session, laidOut, apiReady, resetKey, phone, mod]);
+  }, [session, laidOut, apiReady, resetKey, phone, mod, movie]);
 
   const publishHold = (next: Hold) => {
     holdRef.current = next;
@@ -579,6 +649,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
     return { ...progress, into, at: elapsedAt(progress.durations, progress.index, into) };
   };
   const relaunch = (at: { index: number; offset: number; rush?: boolean }, keepScrub = false) => {
+    setIntro(false);
     launchRef.current = at;
     skipRef.current = { index: at.index, offset: at.offset, rush: at.rush ?? false };
     stopRef.current();
@@ -648,6 +719,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
     }, 80);
   };
   const play = () => {
+    setIntro(false);
     if (!session) {
       launchRef.current = null;
       publishHold("play");
@@ -707,6 +779,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
     update("notes", { open: true, min: false });
   };
   const restart = () => {
+    setIntro(false);
     launchRef.current = null;
     stopRef.current();
     publishHold("play");
@@ -855,6 +928,8 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   const narrating = session && mod.autopilot.some((step) => step.audio !== undefined);
   const handsOff = session && hold !== "control";
   const narrationLines = mod.autopilot.map((step) => step.transcript ?? "");
+  // A movie shows no sticky note until it plays.
+  const noteShown = !intro && (narrating || !handsOff);
   const geometry = (id: WinId): CSSProperties => {
     if (!wins || !size) {
       return {};
@@ -875,7 +950,8 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   const winClass = (id: WinId) => {
     const win = wins?.[id];
     const focused = order[order.length - 1] === id;
-    const shut = id === "notes" && narrating ? false : (id === "notes" && handsOff) || (win != null && !win.open);
+    // The narration stays up while it plays. Once the visitor has control, its note closes like any other.
+    const shut = id === "notes" && narrating && handsOff ? false : (id === "notes" && !noteShown) || (win != null && !win.open);
     return [
       "xd-window",
       `xd-window-${id}`,
@@ -888,6 +964,29 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
       .join(" ");
   };
 
+  // The desktop switcher and Start over. A kiosk shows them above the desktop. A movie keeps the
+  // page clear and tucks them into a settings panel on the playback bar.
+  const controls = (
+    <>
+      <div class="xd-platform" role="radiogroup" aria-label="Desktop style">
+        {(Object.keys(PLATFORM_LABELS) as Platform[]).map((p) => (
+          <button
+            key={p}
+            type="button"
+            role="radio"
+            aria-checked={platform === p}
+            class={platform === p ? "is-on" : ""}
+            onClick={() => setPlatform(p)}
+          >
+            {PLATFORM_LABELS[p]}
+          </button>
+        ))}
+      </div>
+      <button type="button" class="xd-reset" onClick={() => (session ? restart() : setResetKey((k) => k + 1))}>
+        Start over
+      </button>
+    </>
+  );
   const now = clock ? formatClock(clock, platform) : null;
   const excelOpen = wins ? wins.excel.open && !wins.excel.min : true;
   const transport = (
@@ -927,6 +1026,14 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
       muted={muted}
       onMute={toggleMute}
       onRate={chooseRate}
+      settings={
+        movie ? (
+          <>
+            <span class="xd-settings-label">Desktop</span>
+            {controls}
+          </>
+        ) : undefined
+      }
     />
   );
 
@@ -935,28 +1042,13 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
       class={`xd${fitScreen ? " is-fit" : ""}${narrating ? " is-narrating" : ""}${hold === "control" ? " is-user" : ""}${skipping ? " is-skipping" : ""}`}
       data-platform={platform}
     >
-      <div class="xd-head">
-        <div class="xd-head-slot">{head}</div>
-        <div class="xd-toolbar">
-          <div class="xd-platform" role="radiogroup" aria-label="Desktop style">
-            {(["mac", "win"] as const).map((p) => (
-              <button
-                key={p}
-                type="button"
-                role="radio"
-                aria-checked={platform === p}
-                class={platform === p ? "is-on" : ""}
-                onClick={() => setPlatform(p)}
-              >
-                {p === "mac" ? "macOS" : "Windows"}
-              </button>
-            ))}
-          </div>
-          <button type="button" class="xd-reset" onClick={() => (session ? restart() : setResetKey((k) => k + 1))}>
-            Start over
-          </button>
+      {/* A movie with no heading of the host's has nothing up here, so it leaves no gap above the desktop. */}
+      {(head || !movie) && (
+        <div class="xd-head">
+          <div class="xd-head-slot">{head}</div>
+          {!movie && <div class="xd-toolbar">{controls}</div>}
         </div>
-      </div>
+      )}
       <div class="xd-compact">
         {narrating ? (
           <NarrationNote
@@ -987,7 +1079,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
           ref={desktopRef}
         >
           {platform === "mac" ? (
-            <div class="xd-menubar" aria-hidden="true">
+            <div key="menubar" class="xd-menubar" aria-hidden="true">
               <span class="xd-menubar-app">Excel</span>
               {["File", "Edit", "View", "Insert", "Format", "Tools", "Data", "Window", "Help"].map((item) => (
                 <span key={item}>{item}</span>
@@ -1029,6 +1121,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
             class={winClass("excel")}
             style={geometry("excel")}
             aria-label="Microsoft Excel window"
+            inert={intro}
             onPointerDownCapture={takeOverFromPointer}
             onKeyDownCapture={takeOverFromPointer}
             onPointerDown={() => focus("excel")}
@@ -1036,6 +1129,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
             <Workbook
               platform={platform}
               resetKey={resetKey}
+              ribbonCollapsed={ribbon === "collapsed"}
               maximized={wins?.excel.max ?? false}
               onTitlePointerDown={(event) => startMove("excel", event)}
               onMinimize={() => update("excel", { min: true })}
@@ -1056,7 +1150,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
 
           <section
             class={winClass("notes")}
-            inert={handsOff && !narrating}
+            inert={!noteShown}
             style={geometry("notes")}
             aria-label="Sticky note"
             onPointerDown={() => focus("notes")}
@@ -1164,19 +1258,19 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
           </section>
 
           {platform === "mac" ? (
-            <div class="xd-dock" inert={handsOff}>
+            <div key="dock" class="xd-dock" inert={handsOff || intro}>
               <DockItem
                 label="Microsoft Excel"
                 running={wins?.excel.open ?? true}
                 onClick={() => showApp("excel")}
               >
                 <span class="xd-tile xd-tile-excel">
-                  <ExcelGlyph size={34} />
+                  <ExcelGlyph size={27} />
                 </span>
               </DockItem>
               <DockItem
                 label="Stickies"
-                running={(wins?.notes.open ?? false) && (!handsOff || narrating)}
+                running={(wins?.notes.open ?? false) && noteShown}
                 onClick={() => showApp("notes")}
               >
                 <span class="xd-tile xd-tile-notes" />
@@ -1186,8 +1280,8 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
                 <span class="xd-tile xd-tile-trash" />
               </DockItem>
             </div>
-          ) : (
-            <div class="xd-taskbar" inert={handsOff}>
+          ) : platform === "win" ? (
+            <div key="taskbar" class="xd-taskbar" inert={handsOff || intro}>
               <span class="xd-taskbar-spacer" />
               <span class="xd-start" title="Start" aria-hidden="true">
                 <svg viewBox="0 0 20 20" width="20" height="20">
@@ -1214,7 +1308,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
               </button>
               <button
                 type="button"
-                class={`xd-tb-app${wins?.notes.open && (!handsOff || narrating) ? " is-running" : ""}`}
+                class={`xd-tb-app${wins?.notes.open && noteShown ? " is-running" : ""}`}
                 title="Sticky Notes"
                 onClick={() => showApp("notes")}
               >
@@ -1245,12 +1339,28 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
                 )}
               </span>
             </div>
+          ) : (
+            // No dock or taskbar to bring a closed note back from, so the stage offers it.
+            wins &&
+            !wins.notes.open &&
+            !intro &&
+            !handsOff && (
+              <button key="note-reopen" type="button" class="xd-note-reopen" onClick={() => showApp("notes")}>
+                <span class="xd-tile-notes xd-tile-notes-sm" />
+                Show note
+              </button>
+            )
           )}
 
-          <div class={`xd-cursor${platform === "mac" ? " is-mac" : ""}`} ref={cursorRef} aria-hidden="true">
+          {/*
+            Keyed, like the platform's own furniture above, so switching platforms never hands the
+            cursor's element (and the transform the demo left on it) to the dock or the taskbar.
+          */}
+          <div key="cursor" class={`xd-cursor${platform === "mac" ? " is-mac" : ""}`} ref={cursorRef} aria-hidden="true">
             <CursorMark size={24} />
             <span class="xd-cursor-ring" />
           </div>
+          {intro && <Intro onPlay={play} onTakeControl={() => setIntro(false)} />}
           {transport}
         </div>
       )}
@@ -1264,13 +1374,14 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
               Close
             </button>
           </div>
-          {hold === "control" && <p class="xd-phone-hint">Tap a cell, then tap the formula bar to type.</p>}
+          {hold === "control" && !intro && <p class="xd-phone-hint">Tap a cell, then tap the formula bar to type.</p>}
           {transport}
           <div class="xd-phone-body" ref={stageRef}>
-            <div class="xd-phone-excel" onPointerDownCapture={takeOverFromPointer} onKeyDownCapture={takeOverFromPointer}>
+            <div class="xd-phone-excel" inert={intro} onPointerDownCapture={takeOverFromPointer} onKeyDownCapture={takeOverFromPointer}>
               <Workbook
                 platform={platform}
                 resetKey={resetKey}
+                ribbonCollapsed={ribbon === "collapsed"}
                 maximized={false}
                 onTitlePointerDown={() => undefined}
                 onMinimize={() => undefined}
@@ -1295,6 +1406,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
                 </button>
               </div>
             )}
+            {intro && <Intro onPlay={play} onTakeControl={() => setIntro(false)} />}
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 /**
  * A simulator module: one workbook, one sheet, and the Excel Educator task list
- * that grades it. Hosts write it as YAML (see modules/*.yaml); `parseModule`
+ * that grades it. Hosts write it as YAML (see hosted-modules/); `parseModule`
  * checks it and resolves it into the `SimModule` the UI reads.
  */
 import type { Inputs, NumberFormat, Range } from "../engine/sheet.ts";

@@ -12,7 +12,7 @@ looks the same on any page.
 **Script tag** (one self-contained file; Preact, the styles and the YAML parser inside):
 
 ```html
-<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.1.1/dist/simmy.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.2.0/dist/simmy.js"></script>
 
 <simmy-app src="/modules/my-assignment.yaml"></simmy-app>
 ```
@@ -42,12 +42,22 @@ The embed page posts `{ type: "simmy:graded", report }` to its parent when a stu
 | Attribute | |
 |---|---|
 | `src` | URL of a YAML (or JSON) module. |
-| `platform` | `mac`, `win` or `auto` (default: match the visitor's computer). |
-| `autoplay` | `false` starts with the visitor in control. The auto demo also stays off for `prefers-reduced-motion`. |
-| `fit-screen` | Size the desktop to the viewport. |
+| `platform` | `mac`, `win`, `web` or `auto` (default: match the visitor's computer, macOS or Windows). `web` is Excel on its own, filling the frame like a browser tab, with no OS chrome. |
+| `mode` | `movie` (default) or `kiosk`. See below. |
+| `ribbon` | `open` (default) or `collapsed`: start with the full ribbon, or with only its tabs. Either way the visitor can collapse or expand it (the corner button, a double-click on a tab, or Ctrl+F1), and a collapsed ribbon shows over the sheet when a tab is clicked. |
+| `autoplay` | `false` starts with the visitor in control, with no Play screen. A kiosk also starts in control for `prefers-reduced-motion`. |
+| `fit-screen` | Fit the whole simulator, heading and playback bar included, to the viewport. It never gets shorter than `--simmy-min-height` (600px); on a shorter screen the page scrolls. |
 | `chrome-offset` | With `fit-screen`, space taken by a sticky header: a length (`72px`) or a selector to measure (`.site-header`). |
 | `history` | On phones, push a history entry so Back closes the full-screen view. |
 | `fonts` | `none` skips loading Carlito and Inter from Google Fonts. |
+
+**Modes.** In `movie` mode (the default) nothing plays until the visitor asks: the desktop opens
+darkened behind a **Play** button and a **Take control** button. The demo plays once, with sound,
+and stops on the finished sheet with the visitor in control; Play starts it over. The desktop
+switcher and Start over sit in a settings panel behind the gear on the playback bar, so the page
+around the movie stays clear. In `kiosk` mode the demo starts by itself, muted (the visitor can
+unmute from the playback bar), and loops, and the desktop switcher and Start over sit above the
+desktop.
 
 Put a module inline instead of `src`:
 
@@ -70,12 +80,13 @@ DOM, so your styles (and search engines) see it.
 problems in place).
 
 **Theming:** set `--excel-green`, `--excel-green-dark`, `--excel-green-fill`, `--excel-grid`,
-`--excel-ink` or `--font-sans` on the element.
+`--excel-ink` or `--font-sans` on the element. With `fit-screen`, `--simmy-min-height` sets the
+shortest the desktop gets (default `600px`).
 
 ## Modules
 
-[`modules/references-and-calculations.yaml`](modules/references-and-calculations.yaml) is a
-complete example. The shape:
+[`hosted-modules/references-and-calculations/config.yaml`](hosted-modules/references-and-calculations/config.yaml)
+is a complete example. Its clips are files in the `audio` folder beside that config. The shape:
 
 ```yaml
 version: 1
@@ -109,10 +120,10 @@ tasks:
       - { kind: copied, range: D6:D12, points: 5, message: … }
 note: { title: Try it, steps: [ … ] }
 autopilot:            # optional; default: type each solution and fill its range
-  - { audio: /modules/narration/1.mp3, transcript: Peter's Pool Palace is having a sale. }
-  - { task: A, type: =C6*C$2, at: D6, done: false, audio: /modules/narration/2.mp3, transcript: Type the discount in D6. }
-  - { task: A, at: D6, fill: D6:D12, audio: /modules/narration/3.mp3, transcript: Fill it down through D12. }
-  - { submit: true, audio: /modules/narration/4.mp3, transcript: Press Next, then Submit Now. }
+  - { audio: 1.mp3, transcript: Peter's Pool Palace is having a sale. }
+  - { task: A, type: =C6*C$2, at: D6, done: false, audio: 2.mp3, transcript: Type the discount in D6. }
+  - { task: A, at: D6, fill: D6:D12, audio: 3.mp3, transcript: Fill it down through D12. }
+  - { submit: true, audio: 4.mp3, transcript: Press Next, then Submit Now. }
 poster: { range: B5:E9 }   # the still phones see; default: the top-left of the content
 copy:                 # optional wording overrides
   paneTitle: Excel Educator
@@ -127,6 +138,8 @@ Rules:
 - `copied`: every cell in `range` holds the first cell's formula, copied down or across.
 
 Each narrated entry has its own `audio` file and `transcript`. The clip loads when that line starts, plays at its own speed, and the cursor fits the entry into the clip. An entry with only those two fields waits on the line. `done: false` types or uses the wand without marking the task finished. `submit: true` presses Next, then Submit Now. Leave `audio` and `transcript` off and the demo keeps its own pace.
+
+A relative `audio` name, such as `1.mp3`, is a file in the `audio` folder next to the module. When the module is loaded from `src`, that name is resolved from the module's URL, so `hosted-modules/pool/config.yaml` plays `hosted-modules/pool/audio/1.mp3`. A full URL or a path that starts with `/` is used as written. Inline YAML has no folder, so a relative name there is left unchanged.
 
 A bar along the bottom of the desktop pauses, resumes, restarts, rewinds, fast-forwards, mutes, and changes the playback speed. It shows the elapsed time and the total. Dragging the time bar moves the cursor and the sheet with it. Clicking the sheet or the task pane pauses the narration where it is and hides the cursor; resume continues from that moment.
 
@@ -147,4 +160,6 @@ npm run check
 npm run build   # dist/index.js (npm), dist/simmy.js (standalone), dist/embed.html
 ```
 
-Publishing: push a `v*` tag; `.github/workflows/publish.yml` publishes to npm.
+Publishing the package: push a `v*` tag; `.github/workflows/publish.yml` publishes to npm.
+
+Publishing the module library: `hosted-modules/<name>/config.yaml` keeps clip names relative (`1.mp3`). `npm run publish-modules` rewrites them to absolute URLs, then deploys `host-dist/` as Workers static assets. The public origin is `simmyOrigin` in `modules-site/package.json` (`https://simmy-modules.cotc.workers.dev`). A page on another origin can load `https://simmy-modules.cotc.workers.dev/references-and-calculations/config.yaml` and the clips play. `npm run host-modules -- --base https://…` writes that directory without deploying.

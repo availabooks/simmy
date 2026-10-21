@@ -1,0 +1,12 @@
+{
+  "name": "simmy-modules",
+  "private": true,
+  "description": "Public static host for simmy module configs and narration audio.",
+  "simmyOrigin": "https://simmy-modules.cotc.workers.dev",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.151.3"
+  }
+}

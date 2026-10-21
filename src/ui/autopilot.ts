@@ -211,7 +211,25 @@ export async function runAutopilot(ctx: PilotContext): Promise<void> {
     }
   };
   const ended = async () => {
-    await ctx.clock?.untilEnded();
+    if (!ctx.clock) {
+      return;
+    }
+    // The clip's promise stays pending until the audio ends. A skip to a later
+    // step has to leave without waiting that out, or the buttons and the bar do nothing.
+    let finished = false;
+    const pending = ctx.clock.untilEnded().then(() => {
+      finished = true;
+    });
+    while (!finished) {
+      if (ctx.cancelled()) {
+        throw new Cancelled();
+      }
+      if (stepIndex < readSkip().index) {
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 16));
+    }
+    await pending;
     await ctx.visible();
     await playback.gate(ctx.cancelled);
     if (ctx.cancelled()) {

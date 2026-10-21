@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fillWrites, type Inputs, normalizeFormula, parseRange, type Range } from "../src/engine/sheet.ts";
 import { doItWrites, gradeAssignment, initialInputs } from "../src/module/grade.ts";
 import { defaultAutopilot } from "../src/module/parse.ts";
 import type { PilotStep, SimModule } from "../src/module/types.ts";
+import { runAutopilot, type WorkbookApi } from "../src/ui/autopilot.ts";
 import { loadFixture } from "./fixture.ts";
 
 const mod = loadFixture();
@@ -79,6 +80,61 @@ describe("autopilot plan", () => {
         return [];
       });
       expect(covered).toContain(task.range);
+    }
+  });
+});
+
+describe("autopilot skip", () => {
+  it("starts the later clip when skip moves past the one that is still playing", async () => {
+    const skip = { index: 0, offset: 0, rush: false };
+    let playing = -1;
+    const release: Array<() => void> = [];
+    let stop = false;
+    const api: WorkbookApi = {
+      reveal: () => undefined,
+      cellPoint: () => null,
+      fillHandlePoint: () => null,
+      select: () => undefined,
+      setTyping: () => undefined,
+      commit: () => undefined,
+      previewFill: () => undefined,
+      applyFill: () => undefined,
+      cancelAll: () => undefined,
+    };
+    const done = runAutopilot({
+      plan: [
+        { kind: "hold", audio: "a", transcript: "First" },
+        { kind: "hold", audio: "b", transcript: "Second" },
+      ],
+      desktop: document.createElement("div"),
+      cursor: document.createElement("div"),
+      api,
+      cancelled: () => stop,
+      visible: async () => undefined,
+      skipTo: () => skip,
+      clock: {
+        play: async (index) => {
+          playing = index;
+          return 30;
+        },
+        untilEnded: () =>
+          new Promise<void>((resolve) => {
+            release.push(resolve);
+          }),
+        onLine: () => undefined,
+      },
+      onStep: () => undefined,
+    });
+    try {
+      await vi.waitFor(() => expect(playing).toBe(0));
+      skip.index = 1;
+      await vi.waitFor(() => expect(playing).toBe(1), { timeout: 500 });
+    } finally {
+      stop = true;
+      for (const resolve of release) {
+        resolve();
+      }
+      await done;
     }
   });
 });

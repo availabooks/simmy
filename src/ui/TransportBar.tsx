@@ -30,10 +30,7 @@ const shownOf = (seconds: number, ready: boolean) => (ready ? formatStamp(second
 export function TransportBar(props: TransportBarProps) {
   const shown = props.scrub ?? props.elapsed;
   const playing = props.session && props.hold === "play";
-  const seek = (value: string) => {
-    props.onScrub(null);
-    props.onSeek(Number(value));
-  };
+  const playLabel = playing ? "Pause" : props.session ? "Resume" : "Start";
   return (
     <div class="xd-transport" role="group" aria-label="Playback">
       <button type="button" class="xd-transport-btn" title="Restart" aria-label="Restart" onClick={props.onRestart}>
@@ -42,8 +39,8 @@ export function TransportBar(props: TransportBarProps) {
       <button
         type="button"
         class="xd-transport-btn"
-        title="Rewind 10 seconds"
-        aria-label="Rewind 10 seconds"
+        title="Previous sentence"
+        aria-label="Previous sentence"
         disabled={!props.ready || shown <= 0}
         onClick={props.onRewind}
       >
@@ -52,28 +49,17 @@ export function TransportBar(props: TransportBarProps) {
       <button
         type="button"
         class={`xd-transport-btn${playing ? "" : " is-primary"}`}
-        title={props.session ? "Resume" : "Start"}
-        aria-label={props.session ? "Resume" : "Start"}
-        disabled={playing}
-        onClick={props.onPlay}
+        title={playLabel}
+        aria-label={playLabel}
+        onClick={playing ? props.onPause : props.onPlay}
       >
-        <PlayIcon />
+        {playing ? <PauseIcon /> : <PlayIcon />}
       </button>
       <button
         type="button"
         class="xd-transport-btn"
-        title="Pause"
-        aria-label="Pause"
-        disabled={!playing}
-        onClick={props.onPause}
-      >
-        <PauseIcon />
-      </button>
-      <button
-        type="button"
-        class="xd-transport-btn"
-        title="Fast-forward 10 seconds"
-        aria-label="Fast-forward 10 seconds"
+        title="Next sentence"
+        aria-label="Next sentence"
         disabled={!props.ready || props.total <= 0 || shown >= props.total}
         onClick={props.onFastForward}
       >
@@ -105,7 +91,7 @@ export function TransportBar(props: TransportBarProps) {
         aria-label="Playback position"
         aria-valuetext={props.ready ? `${formatStamp(shown)} of ${formatStamp(props.total)}` : "Loading"}
         onInput={(event) => props.onScrub(Number(event.currentTarget.value))}
-        onChange={(event) => seek(event.currentTarget.value)}
+        onChange={(event) => props.onSeek(Number(event.currentTarget.value))}
       />
       <span class="xd-transport-time">
         {shownOf(shown, props.ready)}

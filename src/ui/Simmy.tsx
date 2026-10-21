@@ -6,7 +6,7 @@ import type { NoteMessage, SimModule, UnsupportedTool } from "../module/types.ts
 import { runAutopilot, type WorkbookApi } from "./autopilot.ts";
 import { CursorMark } from "./CursorMark.tsx";
 import { useSim } from "./context.ts";
-import { Playback, SKIP_SECONDS, elapsedAt, locateTime, sumDurations, type Hold } from "./playback.ts";
+import { Playback, elapsedAt, planSeek, playhead, skipTrack, sumDurations, type Hold } from "./playback.ts";
 import type { Platform } from "./Ribbon.tsx";
 import { TransportBar } from "./TransportBar.tsx";
 import { ExcelGlyph, Workbook } from "./Workbook.tsx";
@@ -308,8 +308,11 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
     const tick = () => {
       const progress = progressRef.current;
       const audio = audioRef.current;
-      const into =
-        audio && Number(audio.dataset.step) === progress.index ? audio.currentTime : progress.offset;
+      const audioTime =
+        audio && Number(audio.dataset.step) === progress.index && Number.isFinite(audio.currentTime)
+          ? audio.currentTime
+          : null;
+      const into = playhead(progress.offset, audioTime);
       const ready = progress.known.length > 0 && progress.known.every(Boolean);
       setTimelineReady(ready);
       setTotal(ready ? sumDurations(progress.durations) : 0);
@@ -476,9 +479,17 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
             if (!audio) {
               return;
             }
+            const superseded = () => skipRef.current.index > Number(audio.dataset.step);
             while (!stopped && !audio.ended && audio.error === null) {
+              if (superseded()) {
+                audio.pause();
+                return;
+              }
               await playback.gate(() => stopped);
-              if (stopped) {
+              if (stopped || superseded()) {
+                if (superseded()) {
+                  audio.pause();
+                }
                 return;
               }
               if (audio.paused) {
@@ -517,10 +528,14 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
         skipTo: () => skipRef.current,
         playback,
         onStep: (index) => {
-          progressRef.current.index = index;
           const live = skipRef.current;
+          // Catch-up still plays the steps in between. The bar stays on the time the user chose.
+          if (index < live.index) {
+            return;
+          }
+          progressRef.current.index = index;
           progressRef.current.offset = index === live.index ? live.offset : 0;
-          if (!stopped && index >= live.index) {
+          if (!stopped) {
             setSkipping(false);
           }
         },
@@ -556,7 +571,11 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   const here = () => {
     const progress = progressRef.current;
     const audio = audioRef.current;
-    const into = audio && Number(audio.dataset.step) === progress.index ? audio.currentTime : progress.offset;
+    const audioTime =
+      audio && Number(audio.dataset.step) === progress.index && Number.isFinite(audio.currentTime)
+        ? audio.currentTime
+        : null;
+    const into = playhead(progress.offset, audioTime);
     return { ...progress, into, at: elapsedAt(progress.durations, progress.index, into) };
   };
   const relaunch = (at: { index: number; offset: number; rush?: boolean }, keepScrub = false) => {
@@ -572,37 +591,61 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   };
   const seekTo = (seconds: number, keepScrub = false) => {
     const progress = here();
-    if (progress.known.length === 0 || !progress.known.every(Boolean)) {
+    const plan = planSeek({
+      durations: progress.durations,
+      known: progress.known,
+      index: progress.index,
+      into: progress.into,
+      seconds,
+      session,
+    });
+    if (plan.kind === "wait") {
       return;
     }
-    const loc = locateTime(progress.durations, seconds);
-    const ahead =
-      loc.index > progress.index || (loc.index === progress.index && loc.offset >= progress.into - 0.05);
-    const at = {
-      index: loc.index,
-      offset: loc.offset,
-      rush: loc.index === progress.index && loc.offset > progress.into + 0.35,
-    };
-    if (ahead && session) {
-      skipRef.current = at;
-      const audio = audioRef.current;
-      if (loc.index === progress.index && audio && Number(audio.dataset.step) === progress.index) {
-        const span = Number.isFinite(audio.duration) ? audio.duration : loc.offset;
-        audio.currentTime = Math.min(loc.offset, span);
-        progressRef.current.offset = audio.currentTime;
-        setElapsed(elapsedAt(progress.durations, progress.index, audio.currentTime));
-      }
-      if (!keepScrub) {
-        setScrub(null);
-      }
+    const audio = audioRef.current;
+    const audioStep = audio ? Number(audio.dataset.step) : Number.NaN;
+    progressRef.current.index = plan.index;
+    progressRef.current.offset = plan.offset;
+    setElapsed(elapsedAt(progress.durations, plan.index, plan.offset));
+    if (!keepScrub) {
+      setScrub(null);
+    }
+    if (plan.kind === "relaunch") {
+      relaunch({ index: plan.index, offset: plan.offset, rush: plan.rush }, keepScrub);
       return;
     }
-    relaunch(at, keepScrub);
+    skipRef.current = { index: plan.index, offset: plan.offset, rush: plan.rush };
+    if (audio && audioStep === progress.index) {
+      if (plan.leaveClip) {
+        audio.pause();
+      } else {
+        const span = Number.isFinite(audio.duration) ? audio.duration : plan.offset;
+        audio.currentTime = Math.min(plan.offset, span);
+      }
+    }
+    if (plan.leaveClip) {
+      setSkipping(true);
+    }
   };
   const scrubTo = (seconds: number) => {
     setScrub(seconds);
     window.clearTimeout(scrubWait.current);
-    scrubWait.current = window.setTimeout(() => seekTo(seconds, true), 80);
+    scrubWait.current = window.setTimeout(() => {
+      const progress = here();
+      const plan = planSeek({
+        durations: progress.durations,
+        known: progress.known,
+        index: progress.index,
+        into: progress.into,
+        seconds,
+        session,
+      });
+      // Dragging backward restarts the pass. Wait until the pointer is released
+      // so the restart does not fight the thumb on every move.
+      if (plan.kind === "jump") {
+        seekTo(seconds, true);
+      }
+    }, 80);
   };
   const play = () => {
     if (!session) {
@@ -872,8 +915,14 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
       onPlay={play}
       onPause={pause}
       onRestart={restart}
-      onRewind={() => seekTo(here().at - SKIP_SECONDS)}
-      onFastForward={() => seekTo(here().at + SKIP_SECONDS)}
+      onRewind={() => {
+        const place = here();
+        seekTo(skipTrack(place.durations, place.index, "back"));
+      }}
+      onFastForward={() => {
+        const place = here();
+        seekTo(skipTrack(place.durations, place.index, "forward"));
+      }}
       onTakeControl={takeControl}
       muted={muted}
       onMute={toggleMute}

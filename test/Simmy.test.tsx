@@ -41,8 +41,8 @@ describe("Simmy", () => {
     expect(html).toContain("Take control");
     expect(html).toContain("Mute");
     expect(html).toContain("Playback speed");
-    expect(html).toContain("Fast-forward 10 seconds");
-    expect(html).toContain("Rewind 10 seconds");
+    expect(html).toContain("Next sentence");
+    expect(html).toContain("Previous sentence");
   });
 });
 

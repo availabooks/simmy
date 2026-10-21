@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "An embeddable Excel simulator with a graded task pane, configured by a YAML module.",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/availabooks/simmy.git"

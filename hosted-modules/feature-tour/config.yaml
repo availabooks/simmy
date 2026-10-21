@@ -1,0 +1,160 @@
+# The same pool-sale assignment, narrated as a tour of what simmy can do.
+version: 1
+
+workbook:
+  name: References and Calculations
+  sheet: Referencing Cells
+
+assignment:
+  title: A tour of simmy
+  section: Product tour
+  text: >-
+    This is the References and Calculations assignment, used to show what simmy can do. The sheet,
+    the tasks, and the rubric are real. The narration walks through the formula engine, the task
+    pane, grading, and the ways a page can host the simulator.
+
+sheet:
+  rows: 40
+  columns: 20
+  columnWidth: 64
+  # The add-in's setup uses [20, 120, 75, 60, 60] points for A:E; these are narrower
+  # so the table fits beside the task pane.
+  widths: { A: 12, B: 74, C: 54, D: 80, E: 80 }
+  start: D6
+  cells:
+    B2: Discount
+    C2: 0.3
+    B3: Tax Rate
+    C3: 0.067515
+    B5: Item
+    C5: Price
+    D5: Discount
+    E5: Sale Price
+    B6: Pool
+    C6: 350.99
+    B7: Filter
+    C7: 75.67
+    B8: Chlorine
+    C8: 31.25
+    B9: Test Kit
+    C9: 9.99
+    B10: Pool Cover
+    C10: 52.35
+    B11: Skimmer
+    C11: 9.75
+    B12: Vacuum
+    C12: 13.25
+    D14: Subtotal
+    E14: =SUM(E6:E12)
+    D15: Sales Tax
+    D16: Total
+  styles:
+    - { range: C2:C3, format: 0.00% }
+    - { range: D6:E12 C13 B14 E14:E16, format: accounting }
+    - { range: C6:C12, align: center }
+    - { range: B2:B3 B5:E5 D14:D16, fill: "#800000", color: "#ffffff", bold: true }
+    - { range: D6:E12 E14:E16, fill: "#f0e68c", lined: true }
+  outlines:
+    - { range: D6:E12 E14:E16, weight: 1, color: "#a6a6a6" }
+
+tasks:
+  - id: A
+    name: Discount
+    text: Calculate the "Discount" in cell D6.
+    details:
+      - Multiply the regular price in cell C6 by the store discount in cell C$2 (notice the use of relative and absolute cell references).
+      - Copy your formula in cell D6 and paste it in cells D7 through D12.
+    hint: D6
+    points: 25
+    range: D6:D12
+    solution: =C6*$C$2
+    rules:
+      - { kind: value, points: 5, message: The value in cell D6 is not correct, cell: D6, formula: =C6*$C$2 }
+      - { kind: reference, points: 5, message: The formula in cell D6 does not reference C2, cell: D6, ref: C2 }
+      - { kind: reference, points: 5, message: The formula in cell D6 does not reference C6, cell: D6, ref: C6 }
+      - kind: reference
+        points: 5
+        message: The formula in cell D6 does not contain an absolute reference to cell C2
+        cell: D6
+        ref: C2
+        forms: [C$2, $C$2]
+      - { kind: copied, points: 5, message: The formulas in range D6:D12 are not reused, range: D6:D12 }
+
+  - id: B
+    name: Sale Price
+    text: Calculate the sale price in cell E6.
+    details:
+      - Subtract the discount in cell D6 from the regular price in cell C6.
+      - Copy your formula in cell E6 and paste it in cells E7 through E12.
+    hint: E6
+    points: 25
+    range: E6:E12
+    solution: =C6-D6
+    rules:
+      - { kind: value, points: 9, message: The value in cell E6 is not correct, cell: E6, formula: =C6-D6 }
+      - { kind: reference, points: 4, message: The formula in cell E6 does not reference C6, cell: E6, ref: C6 }
+      - { kind: reference, points: 4, message: The formula in cell E6 does not reference D6, cell: E6, ref: D6 }
+      - { kind: copied, points: 8, message: The formulas in range E6:E12 are not reused, range: E6:E12 }
+
+  - id: C
+    name: Sales Tax
+    text: Calculate the sales tax in cell E15.
+    details:
+      - Multiply the subtotal in cell E14 by the sales tax rate in cell C3.
+    hint: E15
+    points: 25
+    range: E15
+    solution: =E14*C3
+    rules:
+      - { kind: value, points: 9, message: The value in cell E15 is not correct, cell: E15, formula: =E14*C3 }
+      - { kind: reference, points: 8, message: The formula in cell E15 does not reference E14, cell: E15, ref: E14 }
+      - { kind: reference, points: 8, message: The formula in cell E15 does not reference C3, cell: E15, ref: C3 }
+
+  - id: D
+    name: Total Price
+    text: Calculate the total in cell E16.
+    details:
+      - Add the sales tax in cell E15 to the subtotal in cell E14.
+      - Reference the appropriate cells as part of your calculations.
+    hint: E16
+    points: 25
+    range: E16
+    solution: =E14+E15
+    rules:
+      - { kind: value, points: 15, message: The value in cell E16 is not correct, cell: E16, formula: =E14+E15 }
+      - { kind: reference, points: 5, message: The formula in cell E16 does not reference E14, cell: E16, ref: E14 }
+      - { kind: reference, points: 5, message: The formula in cell E16 does not reference E15, cell: E16, ref: E15 }
+
+note:
+  title: What you can do
+  steps:
+    - Choose a task in the Excel Educator pane to jump to its cell.
+    - Type a formula. A dollar sign keeps a cell fixed when the formula is copied.
+    - Drag the fill handle to copy a formula down a column.
+    - Click the wand to have a task done for you. Click it again to undo it.
+    - Press Next, then Submit Now to see the grade.
+
+# Each line is its own clip, named as a file in the audio folder next to this config.
+# Hosting rewrites those names to absolute URLs.
+autopilot:
+  - audio: 1.mp3
+    transcript: This is simmy, an embeddable Excel simulator. It puts a working spreadsheet and the Excel Educator task pane on any page, so a student can practice and be graded without installing Excel.
+  - audio: 2.mp3
+    transcript: One YAML module describes the workbook, the sheet, the tasks, the rubric, and this narrated demo. Add it with a script tag, npm, or an iframe.
+  - { audio: 3.mp3, at: C2, transcript: "The sheet is live. Labels, numbers, and formulas are real cells, and the formula engine calculates them. Discount and tax rate are filled in. Subtotal is a SUM." }
+  - { task: A, audio: 4.mp3, transcript: The pane on the right is Excel Educator. Choosing a task jumps the selection to its cell. }
+  - { task: A, type: =C6*C$2, at: D6, done: false, audio: 5.mp3, transcript: "Students type real formulas. This multiplies price by discount. The dollar sign locks the discount cell when the formula is copied." }
+  - { task: A, at: D6, fill: D6:D12, audio: 6.mp3, transcript: "The fill handle copies that formula down the column and shifts the relative references, the same way Excel does." }
+  - { task: B, audio: 7.mp3, transcript: "Each task is worth points. A rule can check the value, the cells a formula refers to, and whether the formula was copied." }
+  - { task: B, type: =C6-D6, at: E6, done: false, audio: 8.mp3, transcript: Sale price subtracts the discount from the price. The grader scores the formula's result on the student's own sheet. }
+  - { task: B, at: E6, fill: E6:E12, audio: 9.mp3, transcript: Filling the column is part of the grade. The copied rule fails if those formulas were not reused. }
+  - { task: C, audio: 10.mp3, transcript: A task can also offer a short video or the textbook. A module can change the message those buttons show. }
+  - { task: C, type: =E14*C3, at: E15, audio: 11.mp3, transcript: "Sales tax multiplies the subtotal by the rate. The engine also supports IF, ROUND, AVERAGE, and the rest of the built-in functions." }
+  - { task: D, audio: 12.mp3, transcript: "The same module can look like Excel on a Mac, Excel on Windows, or Excel alone, filling the page." }
+  - { task: D, type: =E14+E15, at: E16, audio: 13.mp3, transcript: "The bar along the bottom pauses, restarts, rewinds, and changes speed. Drag it and the cursor and the sheet move with it." }
+  - { task: A, audio: 14.mp3, transcript: "Click the sheet or the task pane and the narration pauses, so someone can try the work. Resume picks up from that moment." }
+  - { task: B, doit: true, undo: true, done: false, audio: 15.mp3, transcript: "The wand completes a task. Click it again to undo it. That is Do it and Undo it." }
+  - { submit: true, audio: 16.mp3, transcript: "Press Next, then Submit Now. The rubric runs, the score appears, and the host page can record the grade." }
+
+poster:
+  range: B5:E9

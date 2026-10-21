@@ -1,0 +1,52 @@
+{
+  "name": "@availabooks/simmy",
+  "version": "0.1.0",
+  "description": "An embeddable Excel simulator with a graded task pane, configured by a YAML module.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/availabooks/simmy.git"
+  },
+  "files": [
+    "dist",
+    "modules"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./standalone": "./dist/simmy.js",
+    "./modules/*": "./modules/*"
+  },
+  "sideEffects": [
+    "./dist/index.js",
+    "./dist/simmy.js",
+    "./src/index.ts"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "rm -rf dist && vite build && vite build --mode standalone && tsc -p tsconfig.build.json && node scripts/copy-embed.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "preact": "^10.29.0"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "happy-dom": "^21.0.4",
+    "preact": "^10.29.8",
+    "preact-render-to-string": "^6.7.0",
+    "typescript": "5.9",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

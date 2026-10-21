@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Excel Simulator Example</title>
+    <style>
+      body { margin: 0 auto; max-width: 1200px; padding: 24px 16px; font: 16px/1.5 system-ui, sans-serif; }
+    </style>
+    <!-- After `npm run build`, serve the repo root (npx vite preview won't do; use any static server). -->
+    <script type="module" src="../dist/simmy.js"></script>
+  </head>
+  <body>
+    <simmy-app src="../modules/references-and-calculations.yaml">
+      <div slot="head">
+        <h1>An assignment you can grade right here</h1>
+        <p>A plain HTML page using the standalone build.</p>
+      </div>
+    </simmy-app>
+
+    <h2>Inline module</h2>
+    <simmy-app platform="mac" autoplay="false">
+      <script type="text/yaml">
+        workbook: { name: Totals }
+        assignment:
+          title: Add It Up
+          text: Total the two numbers.
+        sheet:
+          cells: { A1: Apples, B1: 3, A2: Pears, B2: 4, A3: Total }
+          styles:
+            - { range: A3, bold: true }
+            - { range: B3, fill: "#f0e68c", lined: true }
+        tasks:
+          - text: Total B1 and B2 in cell B3.
+            details: [Use the SUM function.]
+            range: B3
+            solution: =SUM(B1:B2)
+            rules:
+              - { kind: value, points: 5, message: The value in cell B3 is not correct, cell: B3, formula: =SUM(B1:B2) }
+              - { kind: reference, points: 5, message: The formula in cell B3 does not reference B1, cell: B3, ref: B1 }
+        note:
+          steps: [Click B3, type =SUM(B1:B2), and press Enter., Press Next, then Submit Now.]
+      </script>
+    </simmy-app>
+  </body>
+</html>

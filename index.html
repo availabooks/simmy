@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>simmy dev</title>
+    <style>
+      /* Hostile page styles, to check that the simulator is isolated from them. */
+      * { box-sizing: content-box; }
+      html { font-size: 10px; }
+      body { margin: 0; padding: 24px; font: 20px/1 Georgia, serif; color: #6a1b9a; background: #fafafa; }
+      button { font: italic 22px serif; }
+      h1 { margin: 0 0 8px; font: 700 40px/1.1 system-ui, sans-serif; color: #111; }
+    </style>
+    <script type="module" src="/src/index.ts"></script>
+  </head>
+  <body>
+    <simmy-app src="/modules/references-and-calculations.yaml">
+      <div slot="head">
+        <h1>Excel simulator dev page</h1>
+        <p>Served by <code>npm run dev</code>. The page's styles are deliberately hostile.</p>
+      </div>
+    </simmy-app>
+    <script type="module">
+      document.querySelector("simmy-app").addEventListener("simmy:graded", (e) => console.log("graded", e.detail));
+    </script>
+  </body>
+</html>

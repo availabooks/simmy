@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Excel Simulator</title>
+    <!--
+      For hosts that can only embed an iframe (an LMS page, a CMS block):
+        <iframe src="https://…/embed.html?module=https://…/my-module.yaml&platform=auto"
+                style="width:100%;height:820px;border:0" title="Excel simulator"></iframe>
+      Query parameters: module (required), platform, autoplay=false.
+      The module URL must allow this page's origin (CORS) if it lives elsewhere.
+    -->
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #f3f3f3;
+      }
+      simmy-app {
+        padding: 12px;
+      }
+    </style>
+    <script type="module" src="./simmy.js"></script>
+  </head>
+  <body>
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      const el = document.createElement("simmy-app");
+      el.setAttribute("fit-screen", "");
+      for (const name of ["platform", "autoplay"]) {
+        if (params.has(name)) el.setAttribute(name, params.get(name));
+      }
+      if (params.has("module")) {
+        el.setAttribute("src", params.get("module"));
+      } else {
+        el.module = {};
+      }
+      // Tell the parent page about grades, so an LMS wrapper can record them.
+      el.addEventListener("simmy:graded", (event) => {
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: "simmy:graded", report: event.detail }, "*");
+        }
+      });
+      document.body.append(el);
+    </script>
+  </body>
+</html>

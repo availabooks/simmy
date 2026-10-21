@@ -28,6 +28,7 @@
   ],
   "scripts": {
     "dev": "vite",
+    "docs": "vite docs",
     "build": "rm -rf dist && vite build && vite build --mode standalone && tsc -p tsconfig.build.json && node scripts/copy-embed.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

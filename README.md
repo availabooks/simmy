@@ -155,6 +155,7 @@ STDEV.P, STDEV.S, SUM, VAR, VAR.P, VAR.S.
 ```sh
 npm install
 npm run dev     # http://localhost:5173, a page with deliberately hostile styles
+npm run docs    # the documentation site in docs/, with a live demo
 npm test
 npm run check
 npm run build   # dist/index.js (npm), dist/simmy.js (standalone), dist/embed.html
@@ -162,4 +163,4 @@ npm run build   # dist/index.js (npm), dist/simmy.js (standalone), dist/embed.ht
 
 Publishing the package: push a `v*` tag; `.github/workflows/publish.yml` publishes to npm.
 
-Publishing the module library: `hosted-modules/<name>/config.yaml` keeps clip names relative (`1.mp3`). `npm run publish-modules` rewrites them to absolute URLs, then deploys `host-dist/` as Workers static assets. The public origin is `simmyOrigin` in `modules-site/package.json` (`https://simmy-modules.cotc.workers.dev`). A page on another origin can load `https://simmy-modules.cotc.workers.dev/references-and-calculations/config.yaml` and the clips play. `npm run host-modules -- --base https://…` writes that directory without deploying.
+Publishing the module library: `hosted-modules/<name>/config.yaml` keeps clip names relative (`1.mp3`). `npm run publish-modules` rewrites them to absolute URLs, puts the docs site (`docs/`) at the root with the module list at `/modules`, then deploys `host-dist/` as Workers static assets. The public origin is `simmyOrigin` in `modules-site/package.json` (`https://simmy-modules.cotc.workers.dev`). A page on another origin can load `https://simmy-modules.cotc.workers.dev/references-and-calculations/config.yaml` and the clips play. `npm run host-modules -- --base https://…` writes that directory without deploying.

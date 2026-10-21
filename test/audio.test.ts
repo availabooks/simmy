@@ -70,4 +70,16 @@ describe("publishHostedModules", () => {
       'href="/references-and-calculations/config.yaml"',
     );
   });
+
+  it("puts a site at the root and moves the module list to modules.html", () => {
+    const out = mkdtempSync(join(tmpdir(), "simmy-host-"));
+    dirs.push(out);
+    publishHostedModules("hosted-modules", out, "https://modules.example.com", "docs");
+
+    expect(readFileSync(join(out, "index.html"), "utf8")).toContain("<title>simmy docs</title>");
+    expect(readFileSync(join(out, "docs.css"), "utf8").length).toBeGreaterThan(0);
+    expect(readFileSync(join(out, "modules.html"), "utf8")).toContain(
+      'href="/references-and-calculations/config.yaml"',
+    );
+  });
 });

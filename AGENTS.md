@@ -28,6 +28,8 @@ installed, so keep the two consistent:
 - `src/index.ts`: the public exports. It also registers the element.
 - `hosted-modules/`: module sources (`<name>/config.yaml` and `<name>/audio/`). `modules-site/`: the Workers static-assets project that publishes them. `embed/` and `examples/`: iframe wrapper and a plain-HTML example.
 - `test/`: Vitest tests, one file per area.
+- `docs/`: the documentation site, plain static files (`npm run docs` serves it). Its live demo
+  uses the published build from jsDelivr and the hosted module, so it shows what users get.
 
 ## Commands
 
@@ -53,7 +55,8 @@ coverage is thin, so check UI changes in the browser with `npm run dev`.
 
 ## Releasing
 
-Bump `version` in `package.json`, update the version in the README's jsDelivr URL, commit, then
+Bump `version` in `package.json`, update the version in the jsDelivr URLs in the README and in
+`docs/index.html` (with the badge beside the docs logo; `test/docs.test.ts` checks), commit, then
 `git tag vX.Y.Z && git push --tags`. The Publish workflow checks that the tag matches
 `package.json`, then publishes to npm through trusted publishing (no token). jsDelivr serves it
 a few minutes later. Don't tag a version that is already on npm.

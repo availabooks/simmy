@@ -1,5 +1,6 @@
 /**
- * Build host-dist with absolute clip URLs, then deploy it as Workers static assets.
+ * Build host-dist (the docs site at the root, the modules with absolute clip URLs beside it),
+ * then deploy it as Workers static assets.
  *
  * The origin is modules-site/package.json `simmyOrigin`. It has to be the public
  * URL of the simmy-modules Worker, because those URLs are written into the YAML.
@@ -14,7 +15,7 @@ if (!origin) {
   throw new Error("modules-site/package.json is missing simmyOrigin");
 }
 
-const names = publishHostedModules("hosted-modules", "host-dist", origin);
+const names = publishHostedModules("hosted-modules", "host-dist", origin, "docs");
 console.log(`Wrote ${names.length} module${names.length === 1 ? "" : "s"} for ${origin}`);
 
 const deploy = spawnSync("npm", ["exec", "--", "wrangler", "deploy"], {

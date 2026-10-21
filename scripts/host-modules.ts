@@ -5,6 +5,7 @@
  *
  * Writes host-dist/<module>/config.yaml with absolute clip URLs, copies each
  * module's audio folder, and adds a CORS header so other sites can fetch them.
+ * The documentation site (docs/) goes at the root, and modules.html lists the modules.
  */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
@@ -30,7 +31,7 @@ function escapeHtml(value: string): string {
   });
 }
 
-/** A plain index so the site root lists the published modules. */
+/** A plain list of the published modules, linked from the docs. */
 function indexPage(names: string[]): string {
   const items = names
     .map((name) => {
@@ -54,7 +55,13 @@ ${items}
 `;
 }
 
-export function publishHostedModules(sourceDir: string, outDir: string, base: string): string[] {
+export function publishHostedModules(
+  sourceDir: string,
+  outDir: string,
+  base: string,
+  /** A folder of static files to serve at the root, such as the docs site. */
+  siteDir?: string,
+): string[] {
   const root = new URL(base.endsWith("/") ? base : `${base}/`);
   const names = readdirSync(sourceDir).filter((name) => statSync(join(sourceDir, name)).isDirectory());
   if (names.length === 0) {
@@ -63,8 +70,16 @@ export function publishHostedModules(sourceDir: string, outDir: string, base: st
 
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
+  if (siteDir) {
+    for (const entry of readdirSync(siteDir)) {
+      if (names.includes(entry)) {
+        throw new Error(`${siteDir}/${entry} has the same name as a module`);
+      }
+      cpSync(join(siteDir, entry), join(outDir, entry), { recursive: true });
+    }
+  }
   writeFileSync(join(outDir, "_headers"), HEADERS);
-  writeFileSync(join(outDir, "index.html"), indexPage(names));
+  writeFileSync(join(outDir, siteDir ? "modules.html" : "index.html"), indexPage(names));
 
   for (const name of names) {
     const dir = join(sourceDir, name);
@@ -107,6 +122,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(1);
   }
   const out = argument("--out") ?? "host-dist";
-  const names = publishHostedModules(argument("--source") ?? "hosted-modules", out, base);
+  const names = publishHostedModules(argument("--source") ?? "hosted-modules", out, base, "docs");
   console.log(`Wrote ${names.length} module${names.length === 1 ? "" : "s"} to ${out}`);
 }

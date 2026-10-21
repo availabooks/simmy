@@ -195,7 +195,7 @@ function Intro({ onPlay, onTakeControl }: { onPlay: () => void; onTakeControl: (
   );
 }
 
-/** Over the desktop while the demo plays: hovering darkens it and offers the mouse back. CSS shows it, so it costs nothing until then. */
+/** Over the desktop while the demo plays: hovering darkens it and invites the visitor to try it. CSS shows it, so it costs nothing until then. */
 function TakeControlVeil({ onTake }: { onTake: () => void }) {
   return (
     <div class="xd-veil" onClick={onTake}>
@@ -208,7 +208,7 @@ function TakeControlVeil({ onTake }: { onTake: () => void }) {
         }}
       >
         <CursorMark size={16} />
-        Take control
+        Try it yourself
       </button>
     </div>
   );

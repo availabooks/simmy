@@ -41,14 +41,28 @@ describe("parseModule", () => {
     expect(mod.sheet.outlines).toHaveLength(2);
     expect(mod.tasks.map((t) => t.id)).toEqual(["A", "B", "C", "D"]);
     expect(mod.totalPoints).toBe(100);
-    expect(mod.autopilot[0]).toEqual({
+    expect(mod.autopilot[0]).toMatchObject({
+      kind: "hold",
+      audio: "/modules/narration/1.mp3",
+      transcript:
+        "Peter's Pool Palace is having an end-of-season pool sale. All pools and pool supplies are 30% off, and you have decided to buy a pool.",
+    });
+    expect(mod.autopilot[4]).toEqual({
       taskId: "A",
       kind: "type",
       cell: "D6",
       formula: "=C6*C$2",
-      fill: "D6:D12",
+      fill: undefined,
+      finish: false,
+      audio: "/modules/narration/5.mp3",
+      transcript:
+        "Multiply the regular price in cell C6 by the store discount in cell C$2. The dollar sign keeps C2 fixed when the formula is copied.",
     });
-    expect(mod.autopilot[1]).toEqual({ taskId: "B", kind: "doit", showUndo: true });
+    expect(mod.autopilot.at(-1)).toEqual({
+      kind: "submit",
+      audio: "/modules/narration/16.mp3",
+      transcript: "Press Next, then Submit Now to see your grade.",
+    });
   });
 
   it("fills in defaults for a small module", () => {
@@ -102,5 +116,60 @@ autopilot:
 
   it("needs at least one task", () => {
     expect(problems({ ...minimal, tasks: [] })).toContain("tasks: needs at least one task");
+  });
+
+  it("reads a clip and transcript on each autopilot entry", () => {
+    const mod = parseModule({
+      ...minimal,
+      autopilot: [
+        { audio: "/media/1.mp3", transcript: "Let's calculate the discount for each row." },
+        { task: "A", audio: "/media/2.mp3", transcript: "Open the task." },
+        {
+          task: "A",
+          type: "=A1+A2",
+          at: "A3",
+          done: false,
+          audio: "/media/3.mp3",
+          transcript: "Type the total in A3.",
+        },
+        { submit: true, audio: "/media/4.mp3", transcript: "Press Next, then Submit Now." },
+      ],
+    });
+    expect(mod.autopilot).toEqual([
+      { kind: "hold", cell: undefined, audio: "/media/1.mp3", transcript: "Let's calculate the discount for each row." },
+      { taskId: "A", kind: "open", audio: "/media/2.mp3", transcript: "Open the task." },
+      {
+        taskId: "A",
+        kind: "type",
+        cell: "A3",
+        formula: "=A1+A2",
+        fill: undefined,
+        finish: false,
+        audio: "/media/3.mp3",
+        transcript: "Type the total in A3.",
+      },
+      { kind: "submit", audio: "/media/4.mp3", transcript: "Press Next, then Submit Now." },
+    ]);
+  });
+
+  it("rejects a narrated autopilot that is missing clips", () => {
+    expect(
+      problems({
+        ...minimal,
+        autopilot: [
+          { audio: "/media/1.mp3", transcript: "Hello." },
+          { task: "A", type: "=A1+A2" },
+        ],
+      }),
+    ).toContain("autopilot[1]: needs an audio file and a transcript");
+    expect(problems({ ...minimal, audio: "/media/one.mp3" })).toContain(
+      "audio: give each autopilot entry its own audio file",
+    );
+    expect(problems({ ...minimal, autopilot: [{ audio: "/media/1.mp3" }] })).toContain(
+      "autopilot[0].transcript: must be text",
+    );
+    expect(problems({ ...minimal, autopilot: [{}] })).toContain(
+      "autopilot[0]: needs a task, or an audio file and a transcript",
+    );
   });
 });

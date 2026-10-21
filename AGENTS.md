@@ -1,0 +1,59 @@
+# simmy
+
+An embeddable Excel simulator, published as `@availabooks/simmy`. It renders a model macOS or
+Windows desktop with a working formula engine and a task pane that grades the student's work.
+One YAML **module** describes the workbook, the tasks, the rubric and an optional narrated demo.
+The README documents the public API (the `<simmy-app>` element, its attributes and events) and
+the module format.
+
+## Relationship to ee-atlas
+
+The `ee-atlas` project (a sibling checkout at `../ee-atlas`) is the Excel Educator add-in that
+simmy is modeled after. simmy simulates that add-in's task pane for people who don't have it
+installed, so keep the two consistent:
+
+- The task pane's behavior, wording and look, and the grading rule kinds (`value`, `reference`,
+  `copied`), follow the add-in. When simmy and ee-atlas disagree, ee-atlas is the source of truth.
+- Check ee-atlas before changing how a rule is graded or what the pane shows.
+- simmy is a local approximation, not the real grader. Don't treat its scores as authoritative.
+
+## Layout
+
+- `src/engine/sheet.ts`: the spreadsheet engine (parse, evaluate, shift references, format). No UI.
+- `src/module/`: `types.ts` (the module shape), `parse.ts` (validation, with path-specific errors),
+  `grade.ts` (rubric rules, Do it and Undo it).
+- `src/ui/`: Preact UI. `Simmy.tsx` (desktop and windows), `Workbook.tsx` (grid), `Ribbon.tsx`,
+  `TaskPane.tsx`, `autopilot.ts` (the auto demo), `styles.css`.
+- `src/element.ts`: the `<simmy-app>` custom element. It renders into a shadow root.
+- `src/index.ts`: the public exports. It also registers the element.
+- `modules/`: example modules. `embed/` and `examples/`: iframe wrapper and a plain-HTML example.
+- `test/`: Vitest tests, one file per area.
+
+## Commands
+
+```sh
+npm install
+npm run dev      # http://localhost:5173; index.html uses deliberately hostile page styles
+npm run check    # tsc --noEmit
+npm test         # vitest run (happy-dom)
+npm run build    # dist/index.js (npm), dist/simmy.js (standalone), dist/types, dist/embed.html
+```
+
+Run `npm run check` and `npm test` before committing. CI runs both, plus the build. UI test
+coverage is thin, so check UI changes in the browser with `npm run dev`.
+
+## Conventions
+
+- Match the surrounding code: double quotes, 2-space indents, doc comments that explain why.
+- Everything runs client-side. There is no backend.
+- The host page's CSS must never reach the simulator, and the simulator's must never leak out.
+  Keep styles inside the shadow root (`src/ui/styles.css`).
+- New formula functions go in `sheet.ts` with a test in `test/sheet.test.ts`. A new rubric rule
+  kind touches `types.ts`, `parse.ts` and `grade.ts`.
+
+## Releasing
+
+Bump `version` in `package.json`, update the version in the README's jsDelivr URL, commit, then
+`git tag vX.Y.Z && git push --tags`. The Publish workflow checks that the tag matches
+`package.json`, then publishes to npm through trusted publishing (no token). jsDelivr serves it
+a few minutes later. Don't tag a version that is already on npm.

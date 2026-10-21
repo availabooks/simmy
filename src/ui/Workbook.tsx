@@ -1151,7 +1151,7 @@ export function Workbook(props: WorkbookProps) {
                 {clip && <div class="xd-ants" style={box(clip.range)} />}
                 {!edit && (
                   <div class="xd-selbox" style={box(selRange)}>
-                    {!fillTarget && <span class="xd-fill-handle" />}
+                    <span class="xd-fill-handle" />
                   </div>
                 )}
                 {fillTarget && <div class="xd-fillbox" style={box(fillTarget)} />}

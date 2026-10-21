@@ -22,9 +22,9 @@ describe("Simmy", () => {
     expect(html).toContain("Next");
   });
 
-  it("shows the module's note and a poster of the finished sheet", () => {
-    expect(html).toContain("Try it");
-    expect(html).toContain("Drag the small square on D6");
+  it("shows the narration and a poster of the finished sheet", () => {
+    expect(html).toContain("Narration");
+    expect(html).toContain("Peter's Pool Palace is having an end-of-season pool sale.");
     expect(html).toContain("1.1 Calculate the &quot;Discount&quot; in cell D6.");
   });
 
@@ -32,6 +32,17 @@ describe("Simmy", () => {
     expect(html).toContain("macOS");
     expect(html).toContain("Windows");
     expect(html).not.toMatch(/MyEducator/i);
+  });
+
+  it("renders a playback bar", () => {
+    expect(html).toContain("Playback");
+    expect(html).toContain("Restart");
+    expect(html).toContain("Pause");
+    expect(html).toContain("Take control");
+    expect(html).toContain("Mute");
+    expect(html).toContain("Playback speed");
+    expect(html).toContain("Fast-forward 10 seconds");
+    expect(html).toContain("Rewind 10 seconds");
   });
 });
 

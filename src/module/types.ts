@@ -42,9 +42,16 @@ export type SimTask = {
   rules: RubricRule[];
 };
 
+/** One narration clip and the line spoken in it. The clip is loaded when this entry starts. */
+export type PilotLine = { audio: string; transcript: string };
+
 export type PilotStep =
-  | { taskId: string; kind: "type"; cell: string; formula: string; fill?: string }
-  | { taskId: string; kind: "doit"; showUndo?: boolean };
+  | ({ taskId: string; kind: "type"; cell: string; formula: string; fill?: string; finish?: false } & Partial<PilotLine>)
+  | ({ taskId: string; kind: "fill"; cell: string; fill: string; finish?: false } & Partial<PilotLine>)
+  | ({ taskId: string; kind: "open" } & Partial<PilotLine>)
+  | ({ taskId: string; kind: "doit"; showUndo?: boolean; finish?: false } & Partial<PilotLine>)
+  | ({ kind: "hold"; cell?: string } & PilotLine)
+  | ({ kind: "submit" } & PilotLine);
 
 export type UnsupportedTool = "video" | "book";
 

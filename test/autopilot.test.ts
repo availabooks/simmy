@@ -12,16 +12,34 @@ const TASKS = mod.tasks;
 function play(m: SimModule, plan: PilotStep[]): Inputs {
   let inputs: Inputs = initialInputs(m);
   for (const step of plan) {
-    if (step.kind === "doit") {
-      const task = m.tasks.find((t) => t.id === step.taskId);
-      inputs = { ...inputs, ...doItWrites(task as (typeof m.tasks)[number]) };
-    } else {
-      inputs = { ...inputs, [step.cell]: normalizeFormula(step.formula) };
-      if (step.fill) {
+    switch (step.kind) {
+      case "hold":
+      case "open":
+      case "submit":
+        break;
+      case "doit": {
+        const task = m.tasks.find((t) => t.id === step.taskId);
+        inputs = { ...inputs, ...doItWrites(task as (typeof m.tasks)[number]) };
+        break;
+      }
+      case "fill":
         inputs = {
           ...inputs,
           ...fillWrites(inputs, parseRange(step.cell) as Range, parseRange(step.fill) as Range),
         };
+        break;
+      case "type":
+        inputs = { ...inputs, [step.cell]: normalizeFormula(step.formula) };
+        if (step.fill) {
+          inputs = {
+            ...inputs,
+            ...fillWrites(inputs, parseRange(step.cell) as Range, parseRange(step.fill) as Range),
+          };
+        }
+        break;
+      default: {
+        const unreachable: never = step;
+        return unreachable;
       }
     }
   }
@@ -31,8 +49,11 @@ function play(m: SimModule, plan: PilotStep[]): Inputs {
 const AUTOPILOT_PLAN = mod.autopilot;
 
 describe("autopilot plan", () => {
-  it("covers every task once, in order", () => {
-    expect(AUTOPILOT_PLAN.map((step) => step.taskId)).toEqual(TASKS.map((task) => task.id));
+  it("covers every task", () => {
+    const acted = AUTOPILOT_PLAN.flatMap((step) =>
+      step.kind === "type" || step.kind === "fill" || step.kind === "doit" ? [step.taskId] : [],
+    );
+    expect(new Set(acted)).toEqual(new Set(TASKS.map((task) => task.id)));
   });
 
   it("earns full credit when played back on the sheet", () => {
@@ -47,11 +68,17 @@ describe("autopilot plan", () => {
   });
 
   it("fills only to the cells each task's range asks for", () => {
-    for (const step of AUTOPILOT_PLAN) {
-      if (step.kind === "type") {
-        const task = TASKS.find((t) => t.id === step.taskId);
-        expect(step.fill ?? step.cell).toBe(task?.range);
-      }
+    for (const task of TASKS) {
+      const covered = AUTOPILOT_PLAN.flatMap((step) => {
+        if (step.kind === "fill" && step.taskId === task.id) {
+          return [step.fill];
+        }
+        if (step.kind === "type" && step.taskId === task.id) {
+          return [step.fill ?? step.cell];
+        }
+        return [];
+      });
+      expect(covered).toContain(task.range);
     }
   });
 });

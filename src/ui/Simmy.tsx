@@ -4,8 +4,11 @@ import { addrName, evaluateSheet, formatValue, isError, rangeAddrs } from "../en
 import { solvedInputs } from "../module/grade.ts";
 import type { NoteMessage, SimModule, UnsupportedTool } from "../module/types.ts";
 import { runAutopilot, type WorkbookApi } from "./autopilot.ts";
+import { CursorMark } from "./CursorMark.tsx";
 import { useSim } from "./context.ts";
+import { Playback, SKIP_SECONDS, elapsedAt, locateTime, sumDurations, type Hold } from "./playback.ts";
 import type { Platform } from "./Ribbon.tsx";
+import { TransportBar } from "./TransportBar.tsx";
 import { ExcelGlyph, Workbook } from "./Workbook.tsx";
 
 type WinId = "excel" | "notes";
@@ -25,9 +28,12 @@ const MIN_SIZE: Record<WinId, { w: number; h: number }> = {
   notes: { w: 170, h: 130 },
 };
 
-/** Space the menu bar and dock (or the taskbar) take from the desktop. */
+/** Height of the playback bar along the bottom of the desktop. */
+const TRANSPORT = 46;
+
+/** Space the menu bar, the playback bar, and the dock (or the taskbar) take from the desktop. */
 function insets(platform: Platform) {
-  return platform === "mac" ? { top: 26, bottom: 74 } : { top: 0, bottom: 48 };
+  return platform === "mac" ? { top: 26, bottom: 74 + TRANSPORT } : { top: 0, bottom: 48 + TRANSPORT };
 }
 
 function initialWins(platform: Platform, width: number, height: number): Wins {
@@ -105,7 +111,7 @@ const PHONE_QUERY = "(max-width: 759px), (max-height: 520px) and (pointer: coars
 export type SimmyProps = {
   /** The desktop to show. "auto" (the default) matches the visitor's computer. */
   platform?: Platform | "auto";
-  /** Run the auto demo until the visitor takes control. Off for people who ask for less motion. */
+  /** Run the auto demo. Off for people who ask for less motion. The bar can pause it and resume from the same moment. */
   autoplay?: boolean;
   /** On a phone, let the browser's Back button close the full-screen view. */
   history?: boolean;
@@ -114,6 +120,39 @@ export type SimmyProps = {
   /** The host's own heading, shown above the desktop beside the toolbar. */
   head?: ComponentChildren;
 };
+
+function NarrationNote({
+  lines,
+  line,
+  activeRef,
+  needsPlay,
+  onPlay,
+}: {
+  lines: string[];
+  line: number;
+  activeRef?: Ref<HTMLParagraphElement>;
+  needsPlay: boolean;
+  onPlay: () => void;
+}) {
+  return (
+    <div class="xd-narration">
+      <strong>Narration</strong>
+      {needsPlay ? (
+        <button type="button" class="xd-narration-play" onClick={onPlay}>
+          Play narration
+        </button>
+      ) : null}
+      <p class="xd-narration-live" aria-live="polite">
+        {line >= 0 ? lines[line] : ""}
+      </p>
+      {lines.map((text, index) => (
+        <p key={index} class={index === line ? "is-on" : ""} ref={index === line ? activeRef : undefined}>
+          {text}
+        </p>
+      ))}
+    </div>
+  );
+}
 
 export function Simmy({ platform: platformProp = "auto", autoplay = true, history = false, fitScreen = false, head }: SimmyProps) {
   const { module: mod } = useSim();
@@ -125,17 +164,38 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   const [pinned, setPinned] = useState(true);
   const [note, setNote] = useState<NoteMessage | null>(null);
   const [clock, setClock] = useState<Date | null>(null);
-  const [auto, setAuto] = useState(true);
+  const [session, setSession] = useState(true);
+  const [hold, setHold] = useState<Hold>("play");
+  const [rate, setRate] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [timelineReady, setTimelineReady] = useState(false);
+  const [scrub, setScrub] = useState<number | null>(null);
+  const [skipping, setSkipping] = useState(false);
   const [apiReady, setApiReady] = useState(false);
   const [phone, setPhone] = useState(false);
   const [open, setOpen] = useState(false);
   const [calm, setCalm] = useState(false);
+  const [line, setLine] = useState(-1);
+  const [needsPlay, setNeedsPlay] = useState(false);
   const desktopRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const posterRef = useRef<HTMLButtonElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<WorkbookApi | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const resumeNarration = useRef<(() => void) | null>(null);
+  const activeLineRef = useRef<HTMLParagraphElement>(null);
   const onScreen = useRef(true);
+  const playbackRef = useRef(new Playback());
+  const mutedRef = useRef(false);
+  const holdRef = useRef<Hold>("play");
+  const launchRef = useRef<{ index: number; offset: number; rush?: boolean } | null>(null);
+  const skipRef = useRef({ index: 0, offset: 0, rush: false });
+  const scrubWait = useRef(0);
+  const stopRef = useRef(() => {});
+  const progressRef = useRef({ durations: [] as number[], known: [] as boolean[], index: 0, offset: 0 });
 
   useEffect(() => {
     setPlatform(
@@ -153,9 +213,13 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
 
   // Auto mode is the default. People who ask for less motion start in control.
   useEffect(() => {
-    const calm = !autoplay || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    setCalm(calm);
-    setAuto(!calm);
+    const reduced = !autoplay || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setCalm(reduced);
+    const next: Hold = reduced ? "control" : "play";
+    holdRef.current = next;
+    setHold(next);
+    setSession(!reduced);
+    playbackRef.current.setHold(next);
   }, [autoplay]);
 
   useEffect(() => {
@@ -194,8 +258,14 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
       window.history.pushState({ xdDemo: true }, "");
     }
     setNote(null);
+    launchRef.current = null;
+    const next: Hold = calm ? "control" : "play";
+    holdRef.current = next;
+    setHold(next);
+    setSession(!calm);
+    playbackRef.current.setHold(next);
+    stopRef.current();
     setResetKey((k) => k + 1);
-    setAuto(!calm);
     setOpen(true);
   };
   const closeDemo = () => {
@@ -229,47 +299,404 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   // Each pass of the autopilot ends by resetting the workbook, which starts the next pass.
   const laidOut = phone ? open : wins !== null;
   useEffect(() => {
+    activeLineRef.current?.scrollIntoView({ block: "nearest" });
+  }, [line]);
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+    const tick = () => {
+      const progress = progressRef.current;
+      const audio = audioRef.current;
+      const into =
+        audio && Number(audio.dataset.step) === progress.index ? audio.currentTime : progress.offset;
+      const ready = progress.known.length > 0 && progress.known.every(Boolean);
+      setTimelineReady(ready);
+      setTotal(ready ? sumDurations(progress.durations) : 0);
+      setElapsed(elapsedAt(progress.durations, progress.index, into));
+    };
+    tick();
+    const timer = window.setInterval(tick, 200);
+    return () => window.clearInterval(timer);
+  }, [session, resetKey]);
+  useEffect(() => {
     const desktop = phone ? stageRef.current : desktopRef.current;
     const cursor = cursorRef.current;
     const api = apiRef.current;
-    if (!auto || !laidOut || !apiReady || !desktop || !cursor || !api) {
+    if (!session || !laidOut || !apiReady || !desktop || !cursor || !api) {
       return;
     }
     let stopped = false;
+    let release: (() => void) | null = null;
+    const playback = playbackRef.current;
+    const launch = launchRef.current ?? { index: 0, offset: 0, rush: false };
+    launchRef.current = null;
+    skipRef.current = { index: launch.index, offset: launch.offset, rush: launch.rush ?? false };
+    stopRef.current = () => {
+      stopped = true;
+      playback.wake();
+    };
+    const narrated = mod.autopilot.some((step) => step.audio !== undefined);
+    const clips: HTMLAudioElement[] = [];
+    let current: HTMLAudioElement | null = null;
+    let queued: { index: number; audio: HTMLAudioElement } | null = null;
+    const durations = mod.autopilot.map(() => 0);
+    const known = mod.autopilot.map((step) => step.audio === undefined);
+    progressRef.current = { durations, known, index: launch.index, offset: launch.offset };
+    setSkipping(launch.index > 0 || launch.offset > 0);
+    if (narrated) {
+      setLine(-1);
+      setWins((wins) => (wins ? { ...wins, notes: { ...wins.notes, open: true, min: false } } : wins));
+    }
+    for (let index = 0; index < mod.autopilot.length; index++) {
+      const url = mod.autopilot[index]?.audio;
+      if (!url) {
+        continue;
+      }
+      const probe = new Audio();
+      clips.push(probe);
+      probe.preload = "metadata";
+      const finish = (seconds: number) => {
+        if (stopped) {
+          return;
+        }
+        durations[index] = seconds;
+        known[index] = true;
+      };
+      probe.addEventListener("loadedmetadata", () => finish(Number.isFinite(probe.duration) ? probe.duration : 0), {
+        once: true,
+      });
+      probe.addEventListener("error", () => finish(0), { once: true });
+      probe.src = url;
+    }
     const waitUntilVisible = async () => {
       while (!phone && !onScreen.current && !stopped) {
         await new Promise((resolve) => window.setTimeout(resolve, 300));
       }
     };
-    void runAutopilot({
-      plan: mod.autopilot,
-      desktop,
-      cursor,
-      api,
-      cancelled: () => stopped,
-      visible: waitUntilVisible,
-    }).then(() => {
+    const prepare = (index: number) => {
+      const url = mod.autopilot[index]?.audio;
+      if (!url) {
+        return null;
+      }
+      if (queued?.index === index) {
+        const audio = queued.audio;
+        queued = null;
+        return audio;
+      }
+      const audio = new Audio(url);
+      audio.preload = "auto";
+      clips.push(audio);
+      return audio;
+    };
+    const clock = narrated
+      ? {
+          play: async (index: number) => {
+            await playback.gate(() => stopped);
+            if (stopped) {
+              return 0;
+            }
+            current?.pause();
+            const audio = prepare(index);
+            if (!audio) {
+              return 0;
+            }
+            current = audio;
+            audio.dataset.step = String(index);
+            audioRef.current = audio;
+            const next = prepare(index + 1);
+            if (next) {
+              queued = { index: index + 1, audio: next };
+            }
+            const metadata = new Promise<void>((resolve) => {
+              if (audio.readyState >= 1) {
+                resolve();
+                return;
+              }
+              audio.addEventListener("loadedmetadata", () => resolve(), { once: true });
+              audio.addEventListener("error", () => resolve(), { once: true });
+            });
+            await metadata;
+            if (stopped) {
+              return 0;
+            }
+            const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+            if (durations[index] === 0 && duration > 0) {
+              durations[index] = duration;
+              known[index] = true;
+            }
+            const live = skipRef.current;
+            const offset = index === live.index ? Math.min(live.offset, Math.max(0, duration - 0.05)) : 0;
+            if (offset > 0) {
+              audio.currentTime = offset;
+            }
+            audio.muted = mutedRef.current;
+            audio.playbackRate = playback.rate;
+            progressRef.current.offset = offset;
+            if (!stopped) {
+              setSkipping(false);
+            }
+            const startClip = async () => {
+              await playback.gate(() => stopped);
+              if (stopped || playback.hold !== "play") {
+                return false;
+              }
+              try {
+                await audio.play();
+                return true;
+              } catch {
+                return false;
+              }
+            };
+            if (await startClip()) {
+              if (!stopped) {
+                setNeedsPlay(false);
+              }
+            } else if (!stopped && playback.hold === "play") {
+              setNeedsPlay(true);
+              await new Promise<void>((resolve) => {
+                release = resolve;
+                resumeNarration.current = resolve;
+              });
+              if (stopped) {
+                return 0;
+              }
+              await startClip();
+              if (!stopped) {
+                setNeedsPlay(false);
+              }
+            }
+            if (playback.hold !== "play") {
+              audio.pause();
+            }
+            return duration;
+          },
+          untilEnded: async () => {
+            const audio = current;
+            if (!audio) {
+              return;
+            }
+            while (!stopped && !audio.ended && audio.error === null) {
+              await playback.gate(() => stopped);
+              if (stopped) {
+                return;
+              }
+              if (audio.paused) {
+                audio.muted = mutedRef.current;
+                audio.playbackRate = playback.rate;
+                try {
+                  await audio.play();
+                } catch {
+                  if (stopped) {
+                    return;
+                  }
+                  await new Promise((resolve) => window.setTimeout(resolve, 250));
+                  continue;
+                }
+              }
+              await new Promise((resolve) => window.setTimeout(resolve, 50));
+              await waitUntilVisible();
+            }
+          },
+          onLine: (index: number) => {
+            if (!stopped) {
+              setLine(index);
+            }
+          },
+        }
+      : undefined;
+    const run = async () => {
+      await runAutopilot({
+        plan: mod.autopilot,
+        desktop,
+        cursor,
+        api,
+        cancelled: () => stopped,
+        visible: waitUntilVisible,
+        clock,
+        skipTo: () => skipRef.current,
+        playback,
+        onStep: (index) => {
+          progressRef.current.index = index;
+          const live = skipRef.current;
+          progressRef.current.offset = index === live.index ? live.offset : 0;
+          if (!stopped && index >= live.index) {
+            setSkipping(false);
+          }
+        },
+      });
       if (!stopped) {
         cursor.classList.remove("is-on");
         window.setTimeout(() => !stopped && setResetKey((k) => k + 1), 600);
       }
-    });
+    };
+    void run();
     return () => {
       stopped = true;
+      playback.wake();
+      release?.();
+      resumeNarration.current = null;
+      setNeedsPlay(false);
+      setSkipping(false);
+      for (const clip of clips) {
+        clip.pause();
+        clip.src = "";
+      }
+      audioRef.current = null;
       cursor.classList.remove("is-on", "is-down");
       api.cancelAll();
     };
-  }, [auto, laidOut, apiReady, resetKey, phone, mod]);
+  }, [session, laidOut, apiReady, resetKey, phone, mod]);
 
-  const takeControl = () => {
-    setAuto(false);
-    setNote(null);
-    update("notes", { open: true, min: false });
-    apiRef.current?.cancelAll();
+  const publishHold = (next: Hold) => {
+    holdRef.current = next;
+    setHold(next);
+    playbackRef.current.setHold(next);
   };
-  const watchAgain = () => {
+  const here = () => {
+    const progress = progressRef.current;
+    const audio = audioRef.current;
+    const into = audio && Number(audio.dataset.step) === progress.index ? audio.currentTime : progress.offset;
+    return { ...progress, into, at: elapsedAt(progress.durations, progress.index, into) };
+  };
+  const relaunch = (at: { index: number; offset: number; rush?: boolean }, keepScrub = false) => {
+    launchRef.current = at;
+    skipRef.current = { index: at.index, offset: at.offset, rush: at.rush ?? false };
+    stopRef.current();
+    publishHold("play");
+    setSession(true);
+    if (!keepScrub) {
+      setScrub(null);
+    }
     setResetKey((k) => k + 1);
-    setAuto(true);
+  };
+  const seekTo = (seconds: number, keepScrub = false) => {
+    const progress = here();
+    if (progress.known.length === 0 || !progress.known.every(Boolean)) {
+      return;
+    }
+    const loc = locateTime(progress.durations, seconds);
+    const ahead =
+      loc.index > progress.index || (loc.index === progress.index && loc.offset >= progress.into - 0.05);
+    const at = {
+      index: loc.index,
+      offset: loc.offset,
+      rush: loc.index === progress.index && loc.offset > progress.into + 0.35,
+    };
+    if (ahead && session) {
+      skipRef.current = at;
+      const audio = audioRef.current;
+      if (loc.index === progress.index && audio && Number(audio.dataset.step) === progress.index) {
+        const span = Number.isFinite(audio.duration) ? audio.duration : loc.offset;
+        audio.currentTime = Math.min(loc.offset, span);
+        progressRef.current.offset = audio.currentTime;
+        setElapsed(elapsedAt(progress.durations, progress.index, audio.currentTime));
+      }
+      if (!keepScrub) {
+        setScrub(null);
+      }
+      return;
+    }
+    relaunch(at, keepScrub);
+  };
+  const scrubTo = (seconds: number) => {
+    setScrub(seconds);
+    window.clearTimeout(scrubWait.current);
+    scrubWait.current = window.setTimeout(() => seekTo(seconds, true), 80);
+  };
+  const play = () => {
+    if (!session) {
+      launchRef.current = null;
+      publishHold("play");
+      setSession(true);
+      setResetKey((k) => k + 1);
+      return;
+    }
+    publishHold("play");
+    const audio = audioRef.current;
+    if (audio && !audio.ended) {
+      audio.muted = mutedRef.current;
+      audio.playbackRate = playbackRef.current.rate;
+      void audio.play().then(
+        () => {
+          setNeedsPlay(false);
+          resumeNarration.current?.();
+        },
+        () => setNeedsPlay(true),
+      );
+      return;
+    }
+    resumeNarration.current?.();
+  };
+  const freezeCursor = () => {
+    const cursor = cursorRef.current;
+    if (!cursor) {
+      return;
+    }
+    const computed = getComputedStyle(cursor).transform;
+    cursor.style.transitionDuration = "0ms";
+    if (computed && computed !== "none") {
+      cursor.style.transform = computed;
+    }
+    cursor.classList.remove("is-down");
+  };
+  const pause = () => {
+    if (holdRef.current !== "play") {
+      return;
+    }
+    publishHold("pause");
+    audioRef.current?.pause();
+    freezeCursor();
+  };
+  const startNarration = () => {
+    play();
+  };
+  const takeControl = () => {
+    if (!session || holdRef.current === "control") {
+      return;
+    }
+    publishHold("control");
+    audioRef.current?.pause();
+    apiRef.current?.previewFill("", null);
+    freezeCursor();
+    setNote(null);
+    setNeedsPlay(false);
+    update("notes", { open: true, min: false });
+  };
+  const restart = () => {
+    launchRef.current = null;
+    stopRef.current();
+    publishHold("play");
+    setSession(true);
+    setScrub(null);
+    setResetKey((k) => k + 1);
+  };
+  const toggleMute = () => {
+    const next = !mutedRef.current;
+    mutedRef.current = next;
+    setMuted(next);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.muted = next;
+    }
+  };
+  const chooseRate = (next: number) => {
+    playbackRef.current.setRate(next);
+    setRate(next);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.playbackRate = next;
+    }
+  };
+  const takeOverFromPointer = (event: { target: EventTarget | null }) => {
+    if (holdRef.current === "control" || !session) {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest(".xd-transport")) {
+      return;
+    }
+    takeControl();
   };
 
   // Lay the windows out once the desktop has a size, and again when the platform or desktop changes.
@@ -286,6 +713,9 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
     focus("notes");
   };
   const closeNote = () => {
+    if (session && hold !== "control" && mod.autopilot.some((step) => step.audio !== undefined)) {
+      return;
+    }
     update("notes", { open: false });
     setNote(null);
   };
@@ -364,6 +794,9 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
     const win = wins[id];
     const onTop = order[order.length - 1] === id;
     if (id === "notes" && win.open && !win.min && onTop) {
+      if (session && hold !== "control" && mod.autopilot.some((step) => step.audio !== undefined)) {
+        return;
+      }
       update(id, { open: false });
       return;
     }
@@ -376,12 +809,15 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   };
 
   const { top, bottom } = insets(platform);
+  const narrating = session && mod.autopilot.some((step) => step.audio !== undefined);
+  const handsOff = session && hold !== "control";
+  const narrationLines = mod.autopilot.map((step) => step.transcript ?? "");
   const geometry = (id: WinId): CSSProperties => {
     if (!wins || !size) {
       return {};
     }
     const win = wins[id];
-    const zIndex = (id === "notes" && pinned ? 50 : 10) + order.indexOf(id);
+    const zIndex = (id === "notes" && pinned ? 50 : 10) + order.indexOf(id) + (id === "notes" && narrating ? 100 : 0);
     if (win.max) {
       return {
         left: 0,
@@ -396,11 +832,12 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
   const winClass = (id: WinId) => {
     const win = wins?.[id];
     const focused = order[order.length - 1] === id;
+    const shut = id === "notes" && narrating ? false : (id === "notes" && handsOff) || (win != null && !win.open);
     return [
       "xd-window",
       `xd-window-${id}`,
       win?.min ? "is-min" : "",
-      (id === "notes" && auto) || (win != null && !win.open) ? "is-closed" : "",
+      shut ? "is-closed" : "",
       win?.max ? "is-max" : "",
       focused ? "" : "is-inactive",
     ]
@@ -410,9 +847,45 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
 
   const now = clock ? formatClock(clock, platform) : null;
   const excelOpen = wins ? wins.excel.open && !wins.excel.min : true;
+  const transport = (
+    <TransportBar
+      hold={hold}
+      session={session}
+      rate={rate}
+      elapsed={elapsed}
+      total={total}
+      ready={timelineReady}
+      scrub={scrub}
+      onScrub={(seconds) => {
+        if (seconds === null) {
+          window.clearTimeout(scrubWait.current);
+          setScrub(null);
+          return;
+        }
+        scrubTo(seconds);
+      }}
+      onSeek={(seconds) => {
+        window.clearTimeout(scrubWait.current);
+        setScrub(null);
+        seekTo(seconds);
+      }}
+      onPlay={play}
+      onPause={pause}
+      onRestart={restart}
+      onRewind={() => seekTo(here().at - SKIP_SECONDS)}
+      onFastForward={() => seekTo(here().at + SKIP_SECONDS)}
+      onTakeControl={takeControl}
+      muted={muted}
+      onMute={toggleMute}
+      onRate={chooseRate}
+    />
+  );
 
   return (
-    <div class={`xd${fitScreen ? " is-fit" : ""}`} data-platform={platform}>
+    <div
+      class={`xd${fitScreen ? " is-fit" : ""}${narrating ? " is-narrating" : ""}${hold === "control" ? " is-user" : ""}${skipping ? " is-skipping" : ""}`}
+      data-platform={platform}
+    >
       <div class="xd-head">
         <div class="xd-head-slot">{head}</div>
         <div class="xd-toolbar">
@@ -430,20 +903,21 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
               </button>
             ))}
           </div>
-          <button type="button" class="xd-reset" onClick={() => setResetKey((k) => k + 1)}>
+          <button type="button" class="xd-reset" onClick={() => (session ? restart() : setResetKey((k) => k + 1))}>
             Start over
           </button>
-          {auto ? (
-            <span class="xd-auto-note">Auto demo running. Hover the window to take control.</span>
-          ) : (
-            <button type="button" class="xd-reset xd-watch" onClick={watchAgain}>
-              Watch it run
-            </button>
-          )}
         </div>
       </div>
       <div class="xd-compact">
-        {note ? (
+        {narrating ? (
+          <NarrationNote
+            lines={narrationLines}
+            line={line}
+            activeRef={phone ? activeLineRef : undefined}
+            needsPlay={needsPlay}
+            onPlay={startNarration}
+          />
+        ) : note ? (
           <div class="xd-compact-note">
             <strong>{note.title}</strong> {note.text}{" "}
             <button type="button" class="xd-note-back" onClick={() => setNote(null)}>
@@ -459,7 +933,10 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
         )}
       </div>
       {!phone && (
-        <div class={`xd-desktop xd-desktop-${platform}${wins ? " is-ready" : ""}`} ref={desktopRef}>
+        <div
+          class={`xd-desktop xd-desktop-${platform}${wins ? " is-ready" : ""}${needsPlay ? " is-awaiting-play" : ""}`}
+          ref={desktopRef}
+        >
           {platform === "mac" ? (
             <div class="xd-menubar" aria-hidden="true">
               <span class="xd-menubar-app">Excel</span>
@@ -501,9 +978,10 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
 
           <section
             class={winClass("excel")}
-            inert={auto}
             style={geometry("excel")}
             aria-label="Microsoft Excel window"
+            onPointerDownCapture={takeOverFromPointer}
+            onKeyDownCapture={takeOverFromPointer}
             onPointerDown={() => focus("excel")}
           >
             <Workbook
@@ -529,7 +1007,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
 
           <section
             class={winClass("notes")}
-            inert={auto}
+            inert={handsOff && !narrating}
             style={geometry("notes")}
             aria-label="Sticky note"
             onPointerDown={() => focus("notes")}
@@ -593,7 +1071,15 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
               )}
             </div>
             <div class="xd-note-body">
-              {note ? (
+              {narrating ? (
+                <NarrationNote
+                  lines={narrationLines}
+                  line={line}
+                  activeRef={phone ? undefined : activeLineRef}
+                  needsPlay={needsPlay}
+                  onPlay={startNarration}
+                />
+              ) : note ? (
                 <>
                   <strong>{note.title}</strong>
                   <p>{note.text}</p>
@@ -605,7 +1091,11 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
                 <>
                   <div class="xd-note-title">
                     <strong>{mod.note.title}</strong>
-                    <button type="button" class="xd-note-btn" onClick={() => setResetKey((k) => k + 1)}>
+                    <button
+                      type="button"
+                      class="xd-note-btn"
+                      onClick={() => (session ? restart() : setResetKey((k) => k + 1))}
+                    >
                       Start over
                     </button>
                   </div>
@@ -625,7 +1115,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
           </section>
 
           {platform === "mac" ? (
-            <div class="xd-dock" inert={auto}>
+            <div class="xd-dock" inert={handsOff}>
               <DockItem
                 label="Microsoft Excel"
                 running={wins?.excel.open ?? true}
@@ -637,7 +1127,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
               </DockItem>
               <DockItem
                 label="Stickies"
-                running={(wins?.notes.open ?? false) && !auto}
+                running={(wins?.notes.open ?? false) && (!handsOff || narrating)}
                 onClick={() => showApp("notes")}
               >
                 <span class="xd-tile xd-tile-notes" />
@@ -648,7 +1138,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
               </DockItem>
             </div>
           ) : (
-            <div class="xd-taskbar" inert={auto}>
+            <div class="xd-taskbar" inert={handsOff}>
               <span class="xd-taskbar-spacer" />
               <span class="xd-start" title="Start" aria-hidden="true">
                 <svg viewBox="0 0 20 20" width="20" height="20">
@@ -675,7 +1165,7 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
               </button>
               <button
                 type="button"
-                class={`xd-tb-app${wins?.notes.open && !auto ? " is-running" : ""}`}
+                class={`xd-tb-app${wins?.notes.open && (!handsOff || narrating) ? " is-running" : ""}`}
                 title="Sticky Notes"
                 onClick={() => showApp("notes")}
               >
@@ -709,33 +1199,10 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
           )}
 
           <div class={`xd-cursor${platform === "mac" ? " is-mac" : ""}`} ref={cursorRef} aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="24" height="24">
-              <path
-                d="M4 2.5v17l4.6-4.2 3 6.4 3.1-1.4-3-6.3h6.3z"
-                fill="#fff"
-                stroke="#111"
-                stroke-width="1.4"
-                stroke-linejoin="round"
-              />
-            </svg>
+            <CursorMark size={24} />
             <span class="xd-cursor-ring" />
           </div>
-          {auto && (
-            <div class="xd-autoveil">
-              <button type="button" class="xd-take" onClick={takeControl}>
-                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                  <path
-                    d="M4 2.5v17l4.6-4.2 3 6.4 3.1-1.4-3-6.3h6.3z"
-                    fill="currentColor"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-                Take control
-              </button>
-            </div>
-          )}
+          {transport}
         </div>
       )}
 
@@ -748,9 +1215,10 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
               Close
             </button>
           </div>
-          {!auto && <p class="xd-phone-hint">Tap a cell, then tap the formula bar to type.</p>}
+          {hold === "control" && <p class="xd-phone-hint">Tap a cell, then tap the formula bar to type.</p>}
+          {transport}
           <div class="xd-phone-body" ref={stageRef}>
-            <div class="xd-phone-excel" inert={auto}>
+            <div class="xd-phone-excel" onPointerDownCapture={takeOverFromPointer} onKeyDownCapture={takeOverFromPointer}>
               <Workbook
                 platform={platform}
                 resetKey={resetKey}
@@ -767,24 +1235,9 @@ export function Simmy({ platform: platformProp = "auto", autoplay = true, histor
               />
             </div>
             <div class="xd-cursor" ref={cursorRef} aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="24" height="24">
-                <path
-                  d="M4 2.5v17l4.6-4.2 3 6.4 3.1-1.4-3-6.3h6.3z"
-                  fill="#fff"
-                  stroke="#111"
-                  stroke-width="1.4"
-                  stroke-linejoin="round"
-                />
-              </svg>
+              <CursorMark size={24} />
               <span class="xd-cursor-ring" />
             </div>
-            {auto && (
-              <div class="xd-autoveil" onClick={takeControl}>
-                <button type="button" class="xd-take">
-                  Tap to take control
-                </button>
-              </div>
-            )}
             {note && (
               <div class="xd-phone-toast" role="status">
                 <strong>{note.title}</strong> {note.text}{" "}

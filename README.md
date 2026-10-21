@@ -109,8 +109,10 @@ tasks:
       - { kind: copied, range: D6:D12, points: 5, message: … }
 note: { title: Try it, steps: [ … ] }
 autopilot:            # optional; default: type each solution and fill its range
-  - { task: A, type: =C6*C$2, at: D6, fill: D6:D12 }
-  - { task: B, doit: true, undo: true }
+  - { audio: /modules/narration/1.mp3, transcript: Peter's Pool Palace is having a sale. }
+  - { task: A, type: =C6*C$2, at: D6, done: false, audio: /modules/narration/2.mp3, transcript: Type the discount in D6. }
+  - { task: A, at: D6, fill: D6:D12, audio: /modules/narration/3.mp3, transcript: Fill it down through D12. }
+  - { submit: true, audio: /modules/narration/4.mp3, transcript: Press Next, then Submit Now. }
 poster: { range: B5:E9 }   # the still phones see; default: the top-left of the content
 copy:                 # optional wording overrides
   paneTitle: Excel Educator
@@ -123,6 +125,10 @@ Rules:
 - `value`: the cell equals what `formula` gives on the student's own sheet.
 - `reference`: the cell's formula refers to `ref`; with `forms`, only those `$` spellings count.
 - `copied`: every cell in `range` holds the first cell's formula, copied down or across.
+
+Each narrated entry has its own `audio` file and `transcript`. The clip loads when that line starts, plays at its own speed, and the cursor fits the entry into the clip. An entry with only those two fields waits on the line. `done: false` types or uses the wand without marking the task finished. `submit: true` presses Next, then Submit Now. Leave `audio` and `transcript` off and the demo keeps its own pace.
+
+A bar along the bottom of the desktop pauses, resumes, restarts, rewinds, fast-forwards, mutes, and changes the playback speed. It shows the elapsed time and the total. Dragging the time bar moves the cursor and the sheet with it. Clicking the sheet or the task pane pauses the narration where it is and hides the cursor; resume continues from that moment.
 
 `parseModule()` checks a module and reports every problem with its path, for example
 `tasks[1].rules[0].cell: "D66" is outside the sheet (20 columns, 40 rows)`.

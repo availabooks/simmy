@@ -16,7 +16,7 @@ import {
   type Range,
   rangeAddrs,
 } from "../engine/sheet.ts";
-import type { CellStyle, Outline, PilotStep, RubricRule, SimCopy, SimModule, SimTask } from "./types.ts";
+import type { CellStyle, Outline, PilotLine, PilotStep, RubricRule, SimCopy, SimModule, SimTask } from "./types.ts";
 
 export class ModuleError extends Error {
   constructor(readonly problems: string[]) {
@@ -322,24 +322,74 @@ export function parseModule(data: unknown): SimModule {
     steps: strings(noteRaw.steps, "note.steps"),
   };
 
+  if (root.audio !== undefined) {
+    fail("audio", "give each autopilot entry its own audio file");
+  }
+
+  /** An entry's clip and spoken line. Both are required together. */
+  const lineOf = (raw: Raw, path: string): PilotLine | undefined => {
+    if (raw.audio === undefined && raw.transcript === undefined) {
+      return undefined;
+    }
+    return { audio: str(raw.audio, `${path}.audio`), transcript: str(raw.transcript, `${path}.transcript`) };
+  };
+  const unfinished = (raw: Raw): { finish: false } | undefined => (raw.done === false ? { finish: false } : undefined);
+
   const autopilot: PilotStep[] =
     root.autopilot === undefined
       ? defaultAutopilot(tasks)
       : list(root.autopilot, "autopilot").map((item, i) => {
           const path = `autopilot[${i}]`;
           const raw = obj(item, path);
+          const line = lineOf(raw, path);
+          if (raw.submit === true) {
+            if (!line) {
+              fail(path, "needs an audio file and a transcript");
+            }
+            return { kind: "submit", audio: line?.audio ?? "", transcript: line?.transcript ?? "" };
+          }
+          if (raw.task === undefined && raw.doit === undefined) {
+            if (!line) {
+              fail(path, "needs a task, or an audio file and a transcript");
+            }
+            const cell = raw.at === undefined ? undefined : cellRef(raw.at, `${path}.at`);
+            return { kind: "hold", cell, audio: line?.audio ?? "", transcript: line?.transcript ?? "" };
+          }
           const taskId = str(raw.task, `${path}.task`);
           const task = tasks.find((t) => t.id === taskId);
           if (!task) {
             fail(`${path}.task`, `no task has id "${taskId}"`);
           }
           if (raw.doit !== undefined) {
-            return { taskId, kind: "doit", showUndo: raw.undo === true };
+            return { taskId, kind: "doit", showUndo: raw.undo === true, ...unfinished(raw), ...line };
+          }
+          if (raw.type === undefined && raw.fill !== undefined) {
+            const cell = raw.at === undefined ? (task?.hint ?? "A1") : cellRef(raw.at, `${path}.at`);
+            return { taskId, kind: "fill", cell, fill: rangeRef(raw.fill, `${path}.fill`), ...unfinished(raw), ...line };
+          }
+          if (raw.type === undefined && raw.at === undefined) {
+            return { taskId, kind: "open", ...line };
           }
           const cell = raw.at === undefined ? (task?.hint ?? "A1") : cellRef(raw.at, `${path}.at`);
           const fill = raw.fill === undefined ? undefined : rangeRef(raw.fill, `${path}.fill`);
-          return { taskId, kind: "type", cell, formula: formula(raw.type ?? task?.solution, `${path}.type`), fill };
+          return {
+            taskId,
+            kind: "type",
+            cell,
+            formula: formula(raw.type ?? task?.solution, `${path}.type`),
+            fill,
+            ...unfinished(raw),
+            ...line,
+          };
         });
+
+  if (autopilot.some((step) => step.audio !== undefined)) {
+    autopilot.forEach((step, i) => {
+      if (step.audio === undefined || step.transcript === undefined) {
+        fail(`autopilot[${i}]`, "needs an audio file and a transcript");
+      }
+    });
+  }
 
   /* ----------------------------------------------------------- the rest */
 

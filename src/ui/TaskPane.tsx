@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import { addrName, type Inputs, parseRange, rangeAddrs } from "../engine/sheet.ts";
 import { doItWrites, type GradeReport, gradeAssignment, type TaskGrade, undoItWrites } from "../module/grade.ts";
 import type { SimTask, UnsupportedTool } from "../module/types.ts";
@@ -292,15 +292,43 @@ type TaskItemProps = {
   onSelect: (ref: string) => void;
 };
 
+/** True when this gesture is selecting instruction text rather than clicking the task. */
+function highlightingText(node: Node): boolean {
+  const root = node.getRootNode();
+  const shadowSelection =
+    root instanceof ShadowRoot
+      ? (root as ShadowRoot & { getSelection?: () => Selection | null }).getSelection?.()
+      : null;
+  const selection = shadowSelection ?? window.getSelection();
+  return selection !== null && !selection.isCollapsed;
+}
+
 function TaskItem(props: TaskItemProps) {
   const { task, index, collapsed, finished, doneIt, busy, grade } = props;
+  const press = useRef<{ x: number; y: number } | null>(null);
   return (
     <div class={`ee-task${collapsed ? " is-collapsed" : ""}`} data-task={task.id}>
       <div
         class="ee-task-inner"
+        onPointerDown={(event) => {
+          press.current = { x: event.clientX, y: event.clientY };
+        }}
         onClick={(event) => {
-          const target = event.target as HTMLElement;
-          if (target.closest(".no-trigger-collapse")) {
+          const target = event.target;
+          if (target instanceof Element && target.closest(".no-trigger-collapse")) {
+            return;
+          }
+          // The autopilot opens a task with a scripted click, which has no pointer press.
+          if (event.detail === 0) {
+            props.onToggle();
+            return;
+          }
+          const start = press.current;
+          press.current = null;
+          const dragged =
+            start !== null && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4;
+          // A drag that highlights the instructions is not a click to open or close.
+          if (dragged || highlightingText(event.currentTarget)) {
             return;
           }
           props.onToggle();

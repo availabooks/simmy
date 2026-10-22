@@ -1,0 +1,69 @@
+# A complete, valid module: one sheet, two graded tasks, and a demo that types each solution.
+# Copy it to <modules>/<name>/config.yaml and change it. To narrate the demo, see SKILL.md.
+version: 1
+
+workbook: { name: Book Order, sheet: Order }
+
+assignment:
+  title: Book Order Totals
+  section: Assessment Section 1
+  text: >-
+    A bookstore is placing an order. Work out each line's cost, then the order's total,
+    so the formulas still work when the quantities change.
+
+sheet:
+  rows: 30
+  columns: 10
+  widths: { A: 20, B: 140, C: 70, D: 70, E: 80 }
+  cells:
+    B2: Shipping
+    C2: 4.5
+    B4: Title
+    C4: Price
+    D4: Quantity
+    E4: Cost
+    B5: Atlas
+    C5: 32
+    D5: 3
+    B6: Field Guide
+    C6: 18.5
+    D6: 10
+    B7: Cookbook
+    C7: 27
+    D7: 4
+    D9: Total
+  styles:
+    - { range: B4:E4, fill: "#1f4e78", color: "#ffffff", bold: true, align: center }
+    - { range: C2 C5:C7 E5:E7 E9, format: "$#,##0.00" }
+    - { range: E5:E7 E9, fill: "#fff2cc" }
+    - { range: D9, bold: true }
+  outlines:
+    - { range: B4:E7 }
+
+tasks:
+  - id: A
+    name: Line cost
+    text: In E5, calculate the cost of the Atlas order, then copy it down through E7.
+    details:
+      - Cost is price times quantity.
+    range: E5:E7
+    solution: =C5*D5
+    rules:
+      - { kind: value, cell: E5, formula: =C5*D5, points: 5, message: E5 should be the price times the quantity. }
+      - { kind: reference, cell: E5, ref: C5, points: 2, message: "E5 should use the price in C5, not a typed number." }
+      - { kind: copied, range: E5:E7, points: 3, message: Copy the formula in E5 down through E7. }
+  - id: B
+    name: Total
+    text: In E9, total the costs and add the shipping charge in C2.
+    range: E9
+    solution: =SUM(E5:E7)+$C$2
+    rules:
+      - { kind: value, cell: E9, formula: =SUM(E5:E7)+C2, points: 5, message: "E9 should be the costs added up, plus shipping." }
+      - { kind: reference, cell: E9, ref: C2, forms: [$C$2, C2], points: 5, message: E9 should refer to the shipping charge in C2. }
+
+note:
+  title: Try it
+  steps:
+    - Click E5 and type a formula that starts with =.
+    - Drag the fill handle down to E7.
+    - Press Next, then Submit Now to see your score.

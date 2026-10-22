@@ -133,6 +133,7 @@
             <li><a href="#narration">Narrated demos</a></li>
             <li><a href="#formulas">Formulas</a></li>
             <li><a href="#hosting">Hosting modules</a></li>
+            <li><a href="#skill">Claude skill</a></li>
             <li><a href="#develop">Develop</a></li>
           </ol>
         </nav>
@@ -577,6 +578,34 @@ try {
             <p>
               To publish somewhere else, <code>npm run host-modules -- --base https://…</code> writes
               <code>host-dist/</code> for that origin without deploying.
+            </p>
+          </section>
+
+          <section id="skill">
+            <h2>Claude skill</h2>
+            <p>
+              The simmy skill teaches Claude to write modules: the format, the grading rules, and the
+              <code>simmy</code> command that checks them, makes their narration and publishes them. Ask
+              Claude for an assignment and it writes the module, runs <code>simmy validate</code> until it
+              passes, and narrates the demo with <code>simmy narrate</code>.
+            </p>
+            <p class="actions">
+              <a class="button primary" href="/skill/simmy.zip" download>Download the skill</a>
+              <a class="button" href="/skill/simmy/SKILL.md">Read it first</a>
+            </p>
+            <p>
+              <strong>Claude Code:</strong> unzip it into your skills folder, so the skill is at
+              <code>~/.claude/skills/simmy/SKILL.md</code> (or <code>.claude/skills/</code> in a project to
+              share it with the project):
+            </p>
+            <pre><code>curl -fsSL https://simmy-modules.cotc.workers.dev/skill/simmy.zip -o simmy-skill.zip
+unzip -o simmy-skill.zip -d ~/.claude/skills</code></pre>
+            <p>
+              <strong>Claude apps:</strong> upload <code>simmy.zip</code> as a skill in Claude's settings.
+            </p>
+            <p>
+              The skill runs the command with <code>npx</code> when it isn't installed, so it needs Node 20 or
+              later. To install it: <code>npm i -g @availabooks/simmy</code>.
             </p>
           </section>
 

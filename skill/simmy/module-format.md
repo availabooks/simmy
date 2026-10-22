@@ -1,0 +1,125 @@
+# Module format
+
+A module is one YAML file (JSON works too). Only `workbook.name`, `assignment.title`,
+`assignment.text` and at least one task are required. Everything else has a default.
+
+```yaml
+version: 1                       # optional; only 1 exists
+workbook:
+  name: Book Order               # required: the workbook title in Excel's title bar
+  sheet: Order                   # the sheet tab; default Sheet1
+assignment:                      # the task pane's assignment heading
+  title: Book Order Totals       # required
+  text: What the student is asked to do overall.   # required
+  section: Assessment Section 1  # default Assessment Section 1
+sheet:
+  rows: 40                       # default 40
+  columns: 20                    # default 20
+  columnWidth: 64                # px, default 64
+  widths: { A: 20, B: 140 }      # px per column
+  start: B2                      # the cell selected at first; default: the first task's hint
+  cells: { B2: Shipping, C2: 4.5, E9: "=SUM(E5:E7)" }
+  styles: [...]                  # see below
+  outlines: [...]                # see below
+tasks: [...]                     # required; see below
+note: { title: Try it, steps: [First step., Second step.] }   # the "try it" card
+autopilot: [...]                 # the demo; default: type each solution and fill its range
+poster: { range: B4:E9 }         # the still image phones show; default: the top-left of the content
+copy:                            # wording overrides, rarely needed
+  paneTitle: Excel Educator
+  unsupported:                   # what the pane's video and textbook buttons say
+    video: { title: …, text: … }
+    book: { title: …, text: … }
+  submitSteps: [Validate Key, Prepare Rubric, Check for Completeness, Evaluate Tasks, Finalize Score]  # exactly 5
+```
+
+Every cell address and range must fall inside `rows` × `columns`.
+
+## Cells
+
+`sheet.cells` maps an address to text, a number, `true`/`false`, or a formula starting with `=`.
+Leave out cells the student fills. Numbers are stored as numbers: write `0.3`, not `30%`, and
+use a `format` style to show a percentage.
+
+## Styles and outlines
+
+`styles` is a list, applied in order, so a later entry wins. Each has a `range` (one range, several
+separated by spaces or commas, or a list) and any of:
+
+| Key | Value |
+|---|---|
+| `fill` | Background color, `"#rrggbb"` (quoted) |
+| `color` | Text color |
+| `bold`, `italic` | `true` or `false` |
+| `lined` | `true`: thin gridlines inside a filled range stay visible |
+| `align` | `center` (the only option) |
+| `format` | `General`, `"0"`, `"0.00"`, `"$#,##0.00"`, `"0.00%"` or `accounting` |
+
+Any other style key is an error.
+
+`outlines` draws a border around ranges: `{ range: B4:E7, weight: 1, color: "#a6a6a6" }`, where
+`weight` is 1 or 2, and 1 and `#a6a6a6` are the defaults.
+
+## Tasks
+
+```yaml
+- id: A                  # default A, B, C… by position; ids must be unique
+  name: Line cost        # the pane's tab label; default: the id
+  text: In E5, calculate the cost, then copy it down through E7.   # required
+  details: [Cost is price times quantity.]                         # extra bullet points
+  range: E5:E7           # required: where Do it writes the solution
+  hint: E5               # the cell selected when the task opens; default: the range's top-left
+  solution: =C5*D5       # required: the formula for the range's top-left cell
+  points: 10             # default: the rules' points added up
+  rules: [...]
+```
+
+Do it writes `solution` into every cell of `range`, shifting relative references as a fill would,
+so write it for the top-left cell. `simmy validate` grades that result and reports any rule it
+fails.
+
+## Rules
+
+Every rule has `kind`, `points` and `message`. The message is shown to the student when the rule
+fails, so write it as advice: "E5 should use the price in C5."
+
+| Kind | Keys | Passes when |
+|---|---|---|
+| `value` | `cell`, `formula` | `cell`'s value equals what `formula` gives on the student's own sheet. Write `formula` with `$` on every reference (or plain cells), since it is evaluated away from the cell. Numbers match within rounding error. |
+| `reference` | `cell`, `ref`, optional `forms` | `cell` holds a formula that refers to `ref`, alone or inside a range (`SUM(C2:C5)` refers to C3). With `forms`, a reference must be spelled exactly as one of them: `forms: [$C$2, C$2]` requires the row locked. A typed number never passes. |
+| `copied` | `range` | Every cell in `range` holds the first cell's formula, shifted as a fill would shift it. |
+
+A task scores its `points` minus the points of the rules it fails, never below 0. To give full
+credit only for a right formula, put most points on `value`. To require that inputs are
+referenced and not typed, add a `reference` rule per input cell.
+
+## Autopilot
+
+The autopilot plays the assignment as a demo. Without `autopilot`, it types each task's solution
+at the top-left of its range and fills the rest. A script is a list of steps:
+
+| Step | Does |
+|---|---|
+| `{ task: A }` | Opens task A in the pane. |
+| `{ task: A, at: D6 }` | Types A's solution in D6. |
+| `{ task: A, type: =C6*C$2, at: D6 }` | Types that formula in D6 (`at` defaults to the task's hint). |
+| `{ task: A, type: …, at: D6, fill: D6:D12 }` | Types, then drags the fill handle over D6:D12. |
+| `{ task: A, at: D6, fill: D6:D12 }` | Fills from D6 without typing. |
+| `{ task: B, doit: true }` | Clicks the wand (Do it). Add `undo: true` to then show Undo it. |
+| `{ audio: 1.mp3, transcript: … }` | Only narrates. Add `at: C2` to select a cell meanwhile. |
+| `{ submit: true, audio: …, transcript: … }` | Presses Next, then Submit Now. |
+
+`done: false` on a typing, fill or wand step leaves the task unfinished, so a later step can
+finish it.
+
+**Narration.** Each step can carry `audio` (a clip) and `transcript` (its words). If any step
+has audio, every step needs both. A relative name like `1.mp3` is a file in the module's `audio/`
+folder. Write only the transcripts and let `simmy narrate` add the names and make the clips. The
+cursor's movement is fitted into each clip's length, so a step lasts as long as its sentence.
+
+## Formulas
+
+Formulas support `+ - * / ^ & %`, comparisons (`= <> < > <= >=`), ranges, `$` references and
+these functions: ABS, AVERAGE, CORREL, COUNT, COUNTA, COUNTIF, IF, MAX, MEDIAN, MIN, MODE,
+MODE.SNGL, ROUND, SQRT, STDEV, STDEV.P, STDEV.S, SUM, VAR, VAR.P, VAR.S. Anything else is
+reported by `simmy validate`. Design tasks around these functions.

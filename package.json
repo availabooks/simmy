@@ -14,6 +14,9 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/types/index.d.ts",
+  "bin": {
+    "simmy": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/types/index.d.ts",
@@ -29,7 +32,7 @@
   "scripts": {
     "dev": "vite",
     "docs": "vite docs",
-    "build": "rm -rf dist && vite build && vite build --mode standalone && tsc -p tsconfig.build.json && node scripts/copy-embed.mjs",
+    "build": "rm -rf dist && vite build && vite build --mode standalone && vite build --mode cli && tsc -p tsconfig.build.json && node scripts/copy-embed.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "tsc --noEmit",
@@ -43,7 +46,9 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@types/node": "^22.20.5",
     "happy-dom": "^21.0.4",
+    "node-edge-tts": "^1.2.11",
     "preact": "^10.29.8",
     "preact-render-to-string": "^6.7.0",
     "typescript": "5.9",

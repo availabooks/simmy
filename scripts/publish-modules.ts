@@ -1,5 +1,6 @@
 /**
- * Build host-dist (the docs site at the root, the modules with absolute clip URLs beside it),
+ * Build host-dist (the docs site at the root, the modules with absolute clip URLs and the
+ * Claude skill beside it),
  * then deploy it as Workers static assets.
  *
  * The origin is modules-site/package.json `simmyOrigin`. It has to be the public
@@ -8,6 +9,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { publishHostedModules } from "./host-modules.ts";
+import { writeSkill } from "./skill.ts";
 
 const site = JSON.parse(readFileSync("modules-site/package.json", "utf8")) as { simmyOrigin?: string };
 const origin = site.simmyOrigin;
@@ -16,6 +18,7 @@ if (!origin) {
 }
 
 const names = publishHostedModules("hosted-modules", "host-dist", origin, "docs");
+writeSkill("host-dist");
 console.log(`Wrote ${names.length} module${names.length === 1 ? "" : "s"} for ${origin}`);
 
 const deploy = spawnSync("npm", ["exec", "--", "wrangler", "deploy"], {

@@ -19,8 +19,13 @@ import {
 import type { CellStyle, Outline, PilotLine, PilotStep, RubricRule, SimCopy, SimModule, SimTask } from "./types.ts";
 
 export class ModuleError extends Error {
-  constructor(readonly problems: string[]) {
+  // A plain field, not a parameter property: the publish scripts run this file with Node's
+  // type stripping, which can't rewrite those.
+  readonly problems: string[];
+
+  constructor(problems: string[]) {
     super(`Invalid simulator module:\n${problems.map((p) => `  - ${p}`).join("\n")}`);
+    this.problems = problems;
     this.name = "ModuleError";
   }
 }

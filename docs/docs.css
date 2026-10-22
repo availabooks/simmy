@@ -189,6 +189,13 @@ ol {
   margin-top: 24px;
 }
 
+/* A row of buttons inside the article, aligned with the text. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .button {
   display: inline-block;
   padding: 10px 18px;

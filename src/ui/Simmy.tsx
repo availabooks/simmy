@@ -214,6 +214,21 @@ function TakeControlVeil({ onTake }: { onTake: () => void }) {
   );
 }
 
+/**
+ * A narration clip. It is a <video>, not an <audio>, because Chrome lets muted video start
+ * without a click but refuses muted audio, and a kiosk has to start with no one touching the
+ * page. It is never attached to the page, so nothing shows.
+ */
+function narrationClip(url?: string): HTMLMediaElement {
+  const clip = document.createElement("video");
+  // Keeps iOS from taking a playing video full screen.
+  clip.playsInline = true;
+  if (url) {
+    clip.src = url;
+  }
+  return clip;
+}
+
 export function Simmy({
   platform: platformProp = "auto",
   mode = "movie",
@@ -258,7 +273,7 @@ export function Simmy({
   const posterRef = useRef<HTMLButtonElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<WorkbookApi | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLMediaElement | null>(null);
   const resumeNarration = useRef<(() => void) | null>(null);
   const activeLineRef = useRef<HTMLParagraphElement>(null);
   const onScreen = useRef(true);
@@ -420,9 +435,9 @@ export function Simmy({
       playback.wake();
     };
     const narrated = mod.autopilot.some((step) => step.audio !== undefined);
-    const clips: HTMLAudioElement[] = [];
-    let current: HTMLAudioElement | null = null;
-    let queued: { index: number; audio: HTMLAudioElement } | null = null;
+    const clips: HTMLMediaElement[] = [];
+    let current: HTMLMediaElement | null = null;
+    let queued: { index: number; audio: HTMLMediaElement } | null = null;
     const durations = mod.autopilot.map(() => 0);
     const known = mod.autopilot.map((step) => step.audio === undefined);
     progressRef.current = { durations, known, index: launch.index, offset: launch.offset };
@@ -436,7 +451,7 @@ export function Simmy({
       if (!url) {
         continue;
       }
-      const probe = new Audio();
+      const probe = narrationClip();
       clips.push(probe);
       probe.preload = "metadata";
       const finish = (seconds: number) => {
@@ -467,7 +482,7 @@ export function Simmy({
         queued = null;
         return audio;
       }
-      const audio = new Audio(url);
+      const audio = narrationClip(url);
       audio.preload = "auto";
       clips.push(audio);
       return audio;

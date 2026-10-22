@@ -88,7 +88,7 @@ Fetching a module needs a web server. Put a page beside the modules folder:
 <!doctype html>
 <meta charset="utf-8" />
 <title>Preview</title>
-<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.3.0/dist/simmy.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.3.1/dist/simmy.js"></script>
 <simmy-app src="modules/my-module/config.yaml" fit-screen></simmy-app>
 ```
 
@@ -110,7 +110,7 @@ site through wrangler. Any page can then load
 ## Embedding
 
 ```html
-<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.3.0/dist/simmy.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.3.1/dist/simmy.js"></script>
 <simmy-app src="https://…/my-module/config.yaml"></simmy-app>
 ```
 

@@ -12,7 +12,7 @@ looks the same on any page.
 **Script tag** (one self-contained file; Preact, the styles and the YAML parser inside):
 
 ```html
-<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.3.0/dist/simmy.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.3.1/dist/simmy.js"></script>
 
 <simmy-app src="/modules/my-assignment.yaml"></simmy-app>
 ```

@@ -1,5 +1,5 @@
 /**
- * A tiny one-sheet spreadsheet engine for the simulator.
+ * A small one-sheet spreadsheet engine for the simulator, with Excel 365's dynamic arrays.
  *
  * It parses and evaluates the formulas a student types, shifts relative
  * references the way Excel does when a formula is filled or pasted, and formats
@@ -12,7 +12,7 @@ export type Range = { c1: number; r1: number; c2: number; r2: number };
 /** Raw cell input keyed by address, exactly as typed ("3.38", "=AVERAGE(D3:D37)"). */
 export type Inputs = Record<string, string>;
 
-export type ErrorCode = "#DIV/0!" | "#N/A" | "#NAME?" | "#NUM!" | "#REF!" | "#VALUE!";
+export type ErrorCode = "#CALC!" | "#DIV/0!" | "#N/A" | "#NAME?" | "#NUM!" | "#REF!" | "#SPILL!" | "#VALUE!";
 export type CellError = { error: ErrorCode };
 export type Value = number | string | boolean | CellError | null;
 
@@ -189,6 +189,8 @@ type Node =
   | { type: "ref"; addr: Addr }
   | { type: "range"; range: Range }
   | { type: "call"; name: string; args: Node[] }
+  /** An argument left empty, as in SEQUENCE(3,,10). */
+  | { type: "missing" }
   | { type: "unary"; op: string; arg: Node }
   | { type: "percent"; arg: Node }
   | { type: "binary"; op: string; left: Node; right: Node };
@@ -275,11 +277,12 @@ export function parseFormula(formula: string): Node {
         if (isOp("(")) {
           pos++;
           const args: Node[] = [];
+          const parseArg = (): Node => (isOp(",") || isOp(")") ? { type: "missing" } : parseLevel(0));
           if (!isOp(")")) {
-            args.push(parseLevel(0));
+            args.push(parseArg());
             while (isOp(",")) {
               pos++;
-              args.push(parseLevel(0));
+              args.push(parseArg());
             }
           }
           expectOp(")");
@@ -362,7 +365,23 @@ export function suggestFunctions(prefix: string): FunctionInfo[] {
 
 /* -------------------------------------------------------------- evaluation */
 
-type Arg = { kind: "scalar"; value: Value } | { kind: "range"; values: Value[] };
+/**
+ * An array a formula works with, as rows of values (at least 1×1). A range is one, and so is
+ * what SEQUENCE or SORT returns. Cells never hold one: an array bigger than a cell spills.
+ */
+export type Matrix = Value[][];
+type Result = Value | Matrix;
+
+const isMatrix = (result: Result): result is Matrix => Array.isArray(result);
+
+/**
+ * A function argument: one value, or every value of a range or array in row order. `ref` says
+ * it came from the sheet (A1, A1:B5) rather than being computed, which some functions care
+ * about: COUNTIF and COUNTBLANK only take references.
+ */
+type Arg =
+  | { kind: "scalar"; value: Value }
+  | { kind: "range"; values: Value[]; rows: number; cols: number; ref: boolean };
 
 function toNumber(value: Value): number | CellError {
   if (value === null) {
@@ -382,6 +401,11 @@ function toNumber(value: Value): number | CellError {
   return value;
 }
 
+/** A number as Excel turns it into text: 15 significant digits, so 0.1+0.2 is "0.3". */
+function numberText(n: number): string {
+  return String(Number(n.toPrecision(15)));
+}
+
 function toText(value: Value): string {
   if (value === null) {
     return "";
@@ -390,7 +414,7 @@ function toText(value: Value): string {
     return value ? "TRUE" : "FALSE";
   }
   if (typeof value === "number") {
-    return String(value);
+    return numberText(value);
   }
   if (typeof value === "string") {
     return value;
@@ -423,6 +447,19 @@ function collectNumbers(args: Arg[]): number[] | CellError {
     out.push(n);
   }
   return out;
+}
+
+/** Run `fn` on the values as numbers, or return the first error among them. */
+function withNumbers(values: Value[], fn: (ns: number[]) => Value): Value {
+  const ns: number[] = [];
+  for (const value of values) {
+    const n = toNumber(value);
+    if (isError(n)) {
+      return n;
+    }
+    ns.push(n);
+  }
+  return fn(ns);
 }
 
 function variance(nums: number[], sample: boolean): number | CellError {
@@ -520,15 +557,50 @@ AGGREGATES["MODE.SNGL"] = AGGREGATES.MODE;
 AGGREGATES.STDEV = AGGREGATES["STDEV.S"];
 AGGREGATES.VAR = AGGREGATES["VAR.S"];
 
+/**
+ * Functions of single values. Given an array anywhere, they run once per element and return
+ * an array (=ABS(A1:A3) spills three values), the way Excel 365 lifts them.
+ */
+type ScalarFunction = { min: number; max: number; fn: (...values: Value[]) => Value };
+
+const SCALAR_FUNCTIONS: Record<string, ScalarFunction> = {
+  ABS: { min: 1, max: 1, fn: (x) => withNumbers([x], ([n]) => Math.abs(n)) },
+  SQRT: { min: 1, max: 1, fn: (x) => withNumbers([x], ([n]) => (n < 0 ? err("#NUM!") : Math.sqrt(n))) },
+  ROUND: {
+    min: 2,
+    max: 2,
+    fn: (x, digits) =>
+      withNumbers([x, digits], ([n, d]) => {
+        const factor = 10 ** Math.trunc(d);
+        return (Math.sign(n) * Math.round(Math.abs(n) * factor + 1e-9)) / factor;
+      }),
+  },
+};
+
 type Ctx = {
   cell: (addr: Addr) => Value;
 };
 
-function evalArg(node: Node, ctx: Ctx): Arg {
-  if (node.type === "range") {
-    return { kind: "range", values: rangeAddrs(node.range).map((addr) => ctx.cell(addr)) };
+function rangeMatrix(range: Range, ctx: Ctx): Matrix {
+  const rows: Matrix = [];
+  for (let row = range.r1; row <= range.r2; row++) {
+    const line: Value[] = [];
+    for (let col = range.c1; col <= range.c2; col++) {
+      line.push(ctx.cell({ col, row }));
+    }
+    rows.push(line);
   }
-  return { kind: "scalar", value: evalNode(node, ctx) };
+  return rows;
+}
+
+function evalArg(node: Node, ctx: Ctx): Arg {
+  // A reference is a range to a function, even a single cell: SUM(A1) skips text in A1.
+  const ref = node.type === "ref" || node.type === "range";
+  const result = node.type === "ref" ? [[ctx.cell(node.addr)]] : evalNode(node, ctx);
+  if (!isMatrix(result)) {
+    return { kind: "scalar", value: result };
+  }
+  return { kind: "range", values: result.flat(), rows: result.length, cols: result[0].length, ref };
 }
 
 function scalarOf(arg: Arg): Value {
@@ -538,26 +610,88 @@ function scalarOf(arg: Arg): Value {
   return arg.values.length === 1 ? arg.values[0] : err("#VALUE!");
 }
 
-function callFunction(name: string, nodes: Node[], ctx: Ctx): Value {
+/**
+ * Apply a function of single values across arrays, element by element. A side of length 1
+ * stretches to fit the others; where an array is too short for the result, Excel gives #N/A.
+ */
+function lift(args: Result[], fn: (...values: Value[]) => Value): Result {
+  if (!args.some(isMatrix)) {
+    return fn(...(args as Value[]));
+  }
+  const rows = Math.max(...args.map((arg) => (isMatrix(arg) ? arg.length : 1)));
+  const cols = Math.max(...args.map((arg) => (isMatrix(arg) ? arg[0].length : 1)));
+  const out: Matrix = [];
+  for (let i = 0; i < rows; i++) {
+    const line: Value[] = [];
+    for (let j = 0; j < cols; j++) {
+      const values: Value[] = [];
+      let short = false;
+      for (const arg of args) {
+        if (!isMatrix(arg)) {
+          values.push(arg);
+          continue;
+        }
+        const r = arg.length === 1 ? 0 : i;
+        const c = arg[0].length === 1 ? 0 : j;
+        if (r >= arg.length || c >= arg[0].length) {
+          short = true;
+          break;
+        }
+        values.push(arg[r][c]);
+      }
+      line.push(short ? err("#N/A") : fn(...values));
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+/** IF's test as true or false, or the error that stops it. */
+function truth(value: Value): boolean | CellError {
+  const n = toNumber(value);
+  return isError(n) ? n : n !== 0;
+}
+
+function callIf(nodes: Node[], ctx: Ctx): Result {
+  if (nodes.length < 2 || nodes.length > 3) {
+    return err("#VALUE!");
+  }
+  // A branch left empty, as in IF(A1,,"x"), returns 0; a missing third argument returns FALSE.
+  const branch = (i: number): Result => {
+    const node = nodes[i];
+    if (!node) {
+      return false;
+    }
+    return node.type === "missing" ? 0 : evalNode(node, ctx);
+  };
+  const test = evalNode(nodes[0], ctx);
+  if (isMatrix(test)) {
+    return lift([test, branch(1), branch(2)], (t, yes, no) => {
+      const pass = truth(t);
+      return isError(pass) ? pass : pass ? yes : no;
+    });
+  }
+  // Otherwise only the branch taken is worked out, as in Excel.
+  const pass = truth(test);
+  return isError(pass) ? pass : branch(pass ? 1 : 2);
+}
+
+function callFunction(name: string, nodes: Node[], ctx: Ctx): Result {
   if (name.startsWith("#NAME:") || !FUNCTION_SET.has(name)) {
     return err("#NAME?");
   }
   if (name === "IF") {
-    if (nodes.length < 2 || nodes.length > 3) {
+    return callIf(nodes, ctx);
+  }
+  const scalar = SCALAR_FUNCTIONS[name];
+  if (scalar) {
+    if (nodes.length < scalar.min || nodes.length > scalar.max) {
       return err("#VALUE!");
     }
-    const test = scalarOf(evalArg(nodes[0], ctx));
-    if (isError(test)) {
-      return test;
-    }
-    const n = toNumber(test);
-    if (isError(n)) {
-      return n;
-    }
-    if (n !== 0) {
-      return scalarOf(evalArg(nodes[1], ctx));
-    }
-    return nodes[2] ? scalarOf(evalArg(nodes[2], ctx)) : false;
+    return lift(
+      nodes.map((node) => evalNode(node, ctx)),
+      scalar.fn,
+    );
   }
 
   const args = nodes.map((node) => evalArg(node, ctx));
@@ -572,13 +706,13 @@ function callFunction(name: string, nodes: Node[], ctx: Ctx): Value {
 
   switch (name) {
     case "COUNTA":
+      // Everything but an empty cell counts, errors and "" from a formula included.
       return args.reduce(
-        (count, arg) =>
-          count + (arg.kind === "range" ? arg.values.filter((v) => v !== null && v !== "").length : 1),
+        (count, arg) => count + (arg.kind === "range" ? arg.values.filter((v) => v !== null).length : 1),
         0,
       );
     case "COUNTIF": {
-      if (args.length !== 2 || args[0].kind !== "range") {
+      if (args.length !== 2 || args[0].kind !== "range" || !args[0].ref) {
         return err("#VALUE!");
       }
       const criteria = scalarOf(args[1]);
@@ -619,35 +753,6 @@ function callFunction(name: string, nodes: Node[], ctx: Ctx): Value {
       }
       return sxx === 0 || syy === 0 ? err("#DIV/0!") : sxy / Math.sqrt(sxx * syy);
     }
-    case "ROUND": {
-      if (args.length !== 2) {
-        return err("#VALUE!");
-      }
-      const x = toNumber(scalarOf(args[0]));
-      const digits = toNumber(scalarOf(args[1]));
-      if (isError(x)) {
-        return x;
-      }
-      if (isError(digits)) {
-        return digits;
-      }
-      const factor = 10 ** Math.trunc(digits);
-      return (Math.sign(x) * Math.round(Math.abs(x) * factor + 1e-9)) / factor;
-    }
-    case "ABS":
-    case "SQRT": {
-      if (args.length !== 1) {
-        return err("#VALUE!");
-      }
-      const x = toNumber(scalarOf(args[0]));
-      if (isError(x)) {
-        return x;
-      }
-      if (name === "ABS") {
-        return Math.abs(x);
-      }
-      return x < 0 ? err("#NUM!") : Math.sqrt(x);
-    }
     default:
       return err("#NAME?");
   }
@@ -682,69 +787,61 @@ function compare(left: Value, right: Value, op: string): boolean {
   }
 }
 
-function evalNode(node: Node, ctx: Ctx): Value {
+function binary(op: string, left: Value, right: Value): Value {
+  if (isError(left)) {
+    return left;
+  }
+  if (isError(right)) {
+    return right;
+  }
+  if (op === "&") {
+    return toText(left) + toText(right);
+  }
+  if (["=", "<>", "<", ">", "<=", ">="].includes(op)) {
+    return compare(left, right, op);
+  }
+  return withNumbers([left, right], ([a, b]) => {
+    switch (op) {
+      case "+":
+        return a + b;
+      case "-":
+        return a - b;
+      case "*":
+        return a * b;
+      case "/":
+        return b === 0 ? err("#DIV/0!") : a / b;
+      default: {
+        const p = a ** b;
+        return Number.isFinite(p) ? p : err("#NUM!");
+      }
+    }
+  });
+}
+
+function evalNode(node: Node, ctx: Ctx): Result {
   switch (node.type) {
     case "num":
     case "str":
     case "bool":
       return node.value;
+    case "missing":
+      return null;
     case "ref":
       return ctx.cell(node.addr);
-    case "range": {
-      const values = rangeAddrs(node.range).map((addr) => ctx.cell(addr));
-      return values.length === 1 ? values[0] : err("#VALUE!");
-    }
+    case "range":
+      return rangeMatrix(node.range, ctx);
     case "call":
       return callFunction(node.name, node.args, ctx);
-    case "unary": {
-      const n = toNumber(evalNode(node.arg, ctx));
-      if (isError(n)) {
-        return n;
-      }
-      return node.op === "-" ? -n : n;
-    }
-    case "percent": {
-      const n = toNumber(evalNode(node.arg, ctx));
-      return isError(n) ? n : n / 100;
-    }
-    case "binary": {
-      const left = evalNode(node.left, ctx);
-      if (isError(left)) {
-        return left;
-      }
-      const right = evalNode(node.right, ctx);
-      if (isError(right)) {
-        return right;
-      }
-      if (node.op === "&") {
-        return toText(left) + toText(right);
-      }
-      if (["=", "<>", "<", ">", "<=", ">="].includes(node.op)) {
-        return compare(left, right, node.op);
-      }
-      const a = toNumber(left);
-      if (isError(a)) {
-        return a;
-      }
-      const b = toNumber(right);
-      if (isError(b)) {
-        return b;
-      }
-      switch (node.op) {
-        case "+":
-          return a + b;
-        case "-":
-          return a - b;
-        case "*":
-          return a * b;
-        case "/":
-          return b === 0 ? err("#DIV/0!") : a / b;
-        default: {
-          const p = a ** b;
-          return Number.isFinite(p) ? p : err("#NUM!");
-        }
-      }
-    }
+    case "unary":
+      return lift([evalNode(node.arg, ctx)], (value) =>
+        withNumbers([value], ([n]) => (node.op === "-" ? -n : n)),
+      );
+    case "percent":
+      return lift([evalNode(node.arg, ctx)], (value) => withNumbers([value], ([n]) => n / 100));
+    case "binary":
+      return lift([evalNode(node.left, ctx), evalNode(node.right, ctx)], (left, right) =>
+        binary(node.op, left, right),
+      );
     default: {
       const _exhaustive: never = node;
       return _exhaustive;
@@ -773,20 +870,83 @@ export function parseConstant(raw: string): Value {
   return raw;
 }
 
-/** Evaluate every cell. Circular references resolve to 0, as Excel shows after its warning. */
-export function evaluateSheet(inputs: Inputs): Record<string, Value> {
-  const values: Record<string, Value> = {};
-  const visiting = new Set<string>();
-  const parsed = new Map<string, Node | null>();
+export type EvalOptions = {
+  /** The sheet's size. An array that would spill past it is #SPILL!. */
+  bounds?: { rows: number; cols: number };
+};
 
-  const cell = (addr: Addr): Value => {
+/** Every cell's value, and where dynamic arrays spilled. */
+export type SheetEval = {
+  /** Every cell with a value, including the cells a spill fills. */
+  values: Record<string, Value>;
+  /** Anchor cell → the range its array fills. */
+  spills: Record<string, Range>;
+  /** Anchor cell → the range it would fill, for a spill with something in the way. */
+  blocked: Record<string, Range>;
+  /** Cell filled by a spill → its anchor. */
+  owner: Record<string, string>;
+};
+
+/** What a cell shows for a formula's result: an empty reference shows 0, infinity is #NUM!. */
+function cellValue(value: Value): Value {
+  if (value === null) {
+    return 0;
+  }
+  return typeof value === "number" && !Number.isFinite(value) ? err("#NUM!") : value;
+}
+
+const byPosition = (a: string, b: string): number => {
+  const x = parseAddr(a) as Addr;
+  const y = parseAddr(b) as Addr;
+  return x.row - y.row || x.col - y.col;
+};
+
+/**
+ * Evaluates a sheet on demand. A formula whose result is an array spills it into the cells
+ * below and to the right, unless any of them holds something, another spill got there first,
+ * or it runs off the sheet; then the formula shows #SPILL!. Formulas are worked out in reading
+ * order, so when two spills collide the earlier one always wins.
+ */
+function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
+  const out: SheetEval = { values: {}, spills: {}, blocked: {}, owner: {} };
+  const { values } = out;
+  const visiting = new Set<string>();
+  const done = new Set<string>();
+  const parsed = new Map<string, Node | null>();
+  const formulaKeys = Object.keys(inputs)
+    .filter((key) => isFormula(inputs[key]) && parseAddr(key))
+    .sort(byPosition);
+  let settled = false;
+
+  const ctx: Ctx = { cell: (addr) => cell(addr) };
+
+  /**
+   * Work out every formula not yet done, so all the spills are in place. It can run again from
+   * inside itself (a formula it works out reads an empty cell), which is safe: formulas being
+   * worked out are skipped, and each is worked out once.
+   */
+  const settle = () => {
+    if (settled) {
+      return;
+    }
+    for (const key of formulaKeys) {
+      if (!done.has(key) && !visiting.has(key)) {
+        evaluateCell(key);
+      }
+    }
+    settled = done.size === formulaKeys.length;
+  };
+
+  function cell(addr: Addr): Value {
     const key = addrName(addr);
     if (key in values) {
       return values[key];
     }
     const raw = inputs[key];
     if (raw === undefined || raw === "") {
-      return null;
+      // An empty cell may be part of a spill whose formula hasn't been worked out yet.
+      settle();
+      return values[key] ?? null;
     }
     if (!isFormula(raw)) {
       const constant = parseConstant(raw);
@@ -796,35 +956,110 @@ export function evaluateSheet(inputs: Inputs): Record<string, Value> {
     if (visiting.has(key)) {
       return 0;
     }
+    evaluateCell(key);
+    return values[key];
+  }
+
+  function evaluateCell(key: string): void {
     visiting.add(key);
     let tree = parsed.get(key);
     if (tree === undefined) {
       try {
-        tree = parseFormula(raw);
+        tree = parseFormula(inputs[key]);
       } catch {
         tree = null;
       }
       parsed.set(key, tree);
     }
-    const value = tree ? evalNode(tree, { cell }) : err("#NAME?");
+    const result = tree ? evalNode(tree, ctx) : err("#NAME?");
     visiting.delete(key);
-    values[key] = typeof value === "number" && !Number.isFinite(value) ? err("#NUM!") : value;
-    return values[key];
-  };
-
-  for (const key of Object.keys(inputs)) {
-    const addr = parseAddr(key);
-    if (addr) {
-      cell(addr);
-    }
+    done.add(key);
+    place(key, result);
   }
-  return values;
+
+  function place(key: string, result: Result): void {
+    if (!isMatrix(result)) {
+      values[key] = cellValue(result);
+      return;
+    }
+    const rows = result.length;
+    const cols = result[0].length;
+    if (rows === 1 && cols === 1) {
+      values[key] = cellValue(result[0][0]);
+      return;
+    }
+    const at = parseAddr(key) as Addr;
+    const target = { c1: at.col, r1: at.row, c2: at.col + cols - 1, r2: at.row + rows - 1 };
+    const addrs = rangeAddrs(target);
+    const offSheet = opts.bounds !== undefined && (target.c2 >= opts.bounds.cols || target.r2 >= opts.bounds.rows);
+    const inTheWay = addrs.some((addr) => {
+      const other = addrName(addr);
+      return other !== key && ((inputs[other] ?? "") !== "" || other in out.owner);
+    });
+    if (offSheet || inTheWay) {
+      values[key] = err("#SPILL!");
+      out.blocked[key] = target;
+      return;
+    }
+    out.spills[key] = target;
+    // rangeAddrs runs in reading order, the same order as the array's rows.
+    addrs.forEach((addr, i) => {
+      const other = addrName(addr);
+      values[other] = cellValue(result[Math.floor(i / cols)][i % cols]);
+      if (other !== key) {
+        out.owner[other] = key;
+      }
+    });
+  }
+
+  return {
+    ctx,
+    settle,
+    /** Every cell's value and the spills. */
+    finish(): SheetEval {
+      settle();
+      for (const key of Object.keys(inputs)) {
+        const addr = parseAddr(key);
+        if (addr) {
+          cell(addr);
+        }
+      }
+      return out;
+    },
+  };
 }
 
-/** Evaluate a formula as if it were typed into `at`, without touching the sheet. */
-export function evaluateFormulaAt(inputs: Inputs, formula: string, at: Addr): Value {
-  const key = addrName(at);
-  return evaluateSheet({ ...inputs, [key]: formula })[key] ?? null;
+/** Evaluate every cell, placing each dynamic array where it spills. */
+export function evaluateBook(inputs: Inputs, opts: EvalOptions = {}): SheetEval {
+  return sheetEvaluator(inputs, opts).finish();
+}
+
+/** Evaluate every cell. Circular references resolve to 0, as Excel shows after its warning. */
+export function evaluateSheet(inputs: Inputs, opts: EvalOptions = {}): Record<string, Value> {
+  return evaluateBook(inputs, opts).values;
+}
+
+/**
+ * Evaluate a formula against the sheet without putting it in a cell. An array result comes
+ * back whole, rather than spilled.
+ */
+export function evaluateExpression(inputs: Inputs, formula: string, opts: EvalOptions = {}): Value | Matrix {
+  const sheet = sheetEvaluator(inputs, opts);
+  sheet.settle();
+  let tree: Node;
+  try {
+    tree = parseFormula(formula);
+  } catch {
+    return err("#NAME?");
+  }
+  const result = evalNode(tree, sheet.ctx);
+  return isMatrix(result) ? result.map((row) => row.map(cellValue)) : cellValue(result);
+}
+
+/** What a formula would show in a cell: an array's top-left value. */
+export function evaluateFormulaAt(inputs: Inputs, formula: string, _at?: Addr): Value {
+  const result = evaluateExpression(inputs, formula);
+  return isMatrix(result) ? result[0][0] : result;
 }
 
 /* ---------------------------------------------------------------- shifting */

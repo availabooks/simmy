@@ -329,25 +329,41 @@ export type FunctionInfo = { name: string; summary: string };
 export const FUNCTIONS: FunctionInfo[] = [
   { name: "ABS", summary: "Returns the absolute value of a number." },
   { name: "AVERAGE", summary: "Returns the average (arithmetic mean) of its arguments." },
+  { name: "CONCAT", summary: "Concatenates a list or range of text strings." },
   { name: "CORREL", summary: "Returns the correlation coefficient between two data sets." },
   { name: "COUNT", summary: "Counts the number of cells in a range that contain numbers." },
   { name: "COUNTA", summary: "Counts the number of cells in a range that are not empty." },
+  { name: "COUNTBLANK", summary: "Counts the number of empty cells in a specified range of cells." },
   { name: "COUNTIF", summary: "Counts the number of cells within a range that meet the given condition." },
   {
     name: "IF",
     summary: "Checks whether a condition is met, and returns one value if TRUE, and another if FALSE.",
   },
+  { name: "LEFT", summary: "Returns the specified number of characters from the start of a text string." },
+  { name: "LEN", summary: "Returns the number of characters in a text string." },
+  { name: "LOWER", summary: "Converts all letters in a text string to lowercase." },
   { name: "MAX", summary: "Returns the largest value in a set of values." },
   { name: "MEDIAN", summary: "Returns the median, or the number in the middle of the set of given numbers." },
+  {
+    name: "MID",
+    summary: "Returns the characters from the middle of a text string, given a starting position and length.",
+  },
   { name: "MIN", summary: "Returns the smallest number in a set of values." },
   { name: "MODE", summary: "Returns the most frequently occurring value in a range of data." },
   { name: "MODE.SNGL", summary: "Returns the most frequently occurring value in a range of data." },
+  { name: "RANDBETWEEN", summary: "Returns a random number between the numbers you specify." },
+  { name: "RIGHT", summary: "Returns the specified number of characters from the end of a text string." },
   { name: "ROUND", summary: "Rounds a number to a specified number of digits." },
+  { name: "SEQUENCE", summary: "Returns a sequence of numbers." },
+  { name: "SORT", summary: "Sorts a range or array." },
   { name: "SQRT", summary: "Returns the square root of a number." },
   { name: "STDEV", summary: "Estimates standard deviation based on a sample." },
   { name: "STDEV.P", summary: "Calculates standard deviation based on the entire population." },
   { name: "STDEV.S", summary: "Estimates standard deviation based on a sample." },
   { name: "SUM", summary: "Adds all the numbers in a range of cells." },
+  { name: "TEXTJOIN", summary: "Concatenates a list or range of text strings using a delimiter." },
+  { name: "UNIQUE", summary: "Returns the unique values from a range or array." },
+  { name: "UPPER", summary: "Converts a text string to all uppercase letters." },
   { name: "VAR", summary: "Estimates variance based on a sample." },
   { name: "VAR.P", summary: "Calculates variance based on the entire population." },
   { name: "VAR.S", summary: "Estimates variance based on a sample." },
@@ -510,7 +526,6 @@ const AGGREGATES: Record<string, (nums: number[]) => Value> = {
   AVERAGE: (nums) => (nums.length === 0 ? err("#DIV/0!") : nums.reduce((a, b) => a + b, 0) / nums.length),
   MIN: (nums) => (nums.length === 0 ? 0 : Math.min(...nums)),
   MAX: (nums) => (nums.length === 0 ? 0 : Math.max(...nums)),
-  COUNT: (nums) => nums.length,
   MEDIAN: (nums) => {
     if (nums.length === 0) {
       return err("#NUM!");
@@ -563,8 +578,81 @@ AGGREGATES.VAR = AGGREGATES["VAR.S"];
  */
 type ScalarFunction = { min: number; max: number; fn: (...values: Value[]) => Value };
 
+/** Text from a value, or the error it holds. */
+function textOf(value: Value): string | CellError {
+  return isError(value) ? value : toText(value);
+}
+
+/** LEFT and RIGHT: how many characters to take (1 when left out), or #VALUE! below 0. */
+function charCount(value: Value | undefined): number | CellError {
+  if (value === undefined) {
+    return 1;
+  }
+  const n = toNumber(value);
+  return isError(n) ? n : n < 0 ? err("#VALUE!") : Math.trunc(n);
+}
+
 const SCALAR_FUNCTIONS: Record<string, ScalarFunction> = {
   ABS: { min: 1, max: 1, fn: (x) => withNumbers([x], ([n]) => Math.abs(n)) },
+  LEFT: {
+    min: 1,
+    max: 2,
+    fn: (value, count) => {
+      const text = textOf(value);
+      const n = charCount(count);
+      return isError(text) ? text : isError(n) ? n : text.slice(0, n);
+    },
+  },
+  RIGHT: {
+    min: 1,
+    max: 2,
+    fn: (value, count) => {
+      const text = textOf(value);
+      const n = charCount(count);
+      return isError(text) ? text : isError(n) ? n : n === 0 ? "" : text.slice(-n);
+    },
+  },
+  MID: {
+    min: 3,
+    max: 3,
+    fn: (value, start, count) => {
+      const text = textOf(value);
+      if (isError(text)) {
+        return text;
+      }
+      return withNumbers([start, count], ([from, n]) => {
+        if (from < 1 || n < 0) {
+          return err("#VALUE!");
+        }
+        const begin = Math.trunc(from) - 1;
+        return text.slice(begin, begin + Math.trunc(n));
+      });
+    },
+  },
+  UPPER: {
+    min: 1,
+    max: 1,
+    fn: (value) => {
+      const text = textOf(value);
+      return isError(text) ? text : text.toUpperCase();
+    },
+  },
+  LOWER: {
+    min: 1,
+    max: 1,
+    fn: (value) => {
+      const text = textOf(value);
+      return isError(text) ? text : text.toLowerCase();
+    },
+  },
+  LEN: {
+    min: 1,
+    max: 1,
+    fn: (value) => {
+      const text = textOf(value);
+      return isError(text) ? text : text.length;
+    },
+  },
   SQRT: { min: 1, max: 1, fn: (x) => withNumbers([x], ([n]) => (n < 0 ? err("#NUM!") : Math.sqrt(n))) },
   ROUND: {
     min: 2,
@@ -579,6 +667,8 @@ const SCALAR_FUNCTIONS: Record<string, ScalarFunction> = {
 
 type Ctx = {
   cell: (addr: Addr) => Value;
+  /** A random number in [0, 1), the same for the same seed, cell and call. */
+  rand: () => number;
 };
 
 function rangeMatrix(range: Range, ctx: Ctx): Matrix {
@@ -601,6 +691,84 @@ function evalArg(node: Node, ctx: Ctx): Arg {
     return { kind: "scalar", value: result };
   }
   return { kind: "range", values: result.flat(), rows: result.length, cols: result[0].length, ref };
+}
+
+/** An argument as rows of values: a single value is a 1×1 array. */
+function argMatrix(arg: Arg): Matrix {
+  if (arg.kind === "scalar") {
+    return [[arg.value]];
+  }
+  const rows: Matrix = [];
+  for (let r = 0; r < arg.rows; r++) {
+    rows.push(arg.values.slice(r * arg.cols, (r + 1) * arg.cols));
+  }
+  return rows;
+}
+
+function transpose(m: Matrix): Matrix {
+  return m[0].map((_, c) => m.map((row) => row[c]));
+}
+
+/**
+ * SORT's order, ascending: numbers, then text (ignoring case), then TRUE/FALSE, then errors.
+ * Empty cells always go last, whichever way the sort runs.
+ */
+function sortRank(value: Value): number {
+  if (typeof value === "number") {
+    return 0;
+  }
+  if (typeof value === "string") {
+    return 1;
+  }
+  if (typeof value === "boolean") {
+    return 2;
+  }
+  return value === null ? 4 : 3;
+}
+
+function sortCompare(a: Value, b: Value): number {
+  const rank = sortRank(a) - sortRank(b);
+  if (rank !== 0) {
+    return rank;
+  }
+  if (typeof a === "number" && typeof b === "number") {
+    return a - b;
+  }
+  if (typeof a === "string" && typeof b === "string") {
+    const x = a.toLowerCase();
+    const y = b.toLowerCase();
+    return x < y ? -1 : x > y ? 1 : 0;
+  }
+  if (typeof a === "boolean" && typeof b === "boolean") {
+    return Number(a) - Number(b);
+  }
+  return 0;
+}
+
+/** What makes two values the same to UNIQUE: text ignores case, and 1 and "1" differ. */
+function uniqueKey(value: Value): string {
+  if (value === null) {
+    return "blank";
+  }
+  if (isError(value)) {
+    return `error:${value.error}`;
+  }
+  return `${typeof value}:${typeof value === "string" ? value.toLowerCase() : String(value)}`;
+}
+
+/** A whole-number argument, or `fallback` when the argument was left out or left empty. */
+function optionalNumber(node: Node | undefined, ctx: Ctx, fallback: number): number | CellError {
+  if (!node || node.type === "missing") {
+    return fallback;
+  }
+  const value = evalNode(node, ctx);
+  if (isMatrix(value)) {
+    return err("#VALUE!");
+  }
+  if (isError(value)) {
+    return value;
+  }
+  return toNumber(value);
 }
 
 function scalarOf(arg: Arg): Value {
@@ -683,6 +851,44 @@ function callFunction(name: string, nodes: Node[], ctx: Ctx): Result {
   if (name === "IF") {
     return callIf(nodes, ctx);
   }
+  if (name === "RANDBETWEEN") {
+    if (nodes.length !== 2) {
+      return err("#VALUE!");
+    }
+    return lift(
+      nodes.map((node) => evalNode(node, ctx)),
+      (bottom, top) =>
+        withNumbers([bottom, top], ([lo, hi]) => {
+          const low = Math.ceil(lo);
+          const high = Math.floor(hi);
+          return low > high ? err("#NUM!") : low + Math.floor(ctx.rand() * (high - low + 1));
+        }),
+    );
+  }
+  if (name === "SEQUENCE") {
+    if (nodes.length < 1 || nodes.length > 4) {
+      return err("#VALUE!");
+    }
+    const parts = [
+      optionalNumber(nodes[0], ctx, 1),
+      optionalNumber(nodes[1], ctx, 1),
+      optionalNumber(nodes[2], ctx, 1),
+      optionalNumber(nodes[3], ctx, 1),
+    ];
+    const problem = parts.find(isError);
+    if (problem) {
+      return problem;
+    }
+    const [rows, cols, start, step] = parts as number[];
+    const height = Math.trunc(rows);
+    const width = Math.trunc(cols);
+    if (height < 1 || width < 1) {
+      return err("#CALC!");
+    }
+    return Array.from({ length: height }, (_, r) =>
+      Array.from({ length: width }, (_, c) => start + step * (r * width + c)),
+    );
+  }
   const scalar = SCALAR_FUNCTIONS[name];
   if (scalar) {
     if (nodes.length < scalar.min || nodes.length > scalar.max) {
@@ -711,6 +917,134 @@ function callFunction(name: string, nodes: Node[], ctx: Ctx): Result {
         (count, arg) => count + (arg.kind === "range" ? arg.values.filter((v) => v !== null).length : 1),
         0,
       );
+    case "COUNT":
+      if (args.length === 0) {
+        return err("#VALUE!");
+      }
+      // Unlike SUM, COUNT skips errors. A value typed into it counts if it reads as a number.
+      return args.reduce(
+        (count, arg) =>
+          count +
+          (arg.kind === "range"
+            ? arg.values.filter((v) => typeof v === "number").length
+            : arg.value !== null && !isError(arg.value) && !isError(toNumber(arg.value))
+              ? 1
+              : 0),
+        0,
+      );
+    case "COUNTBLANK":
+      if (args.length !== 1 || args[0].kind !== "range" || !args[0].ref) {
+        return err("#VALUE!");
+      }
+      // A formula's "" counts as blank; a 0 doesn't.
+      return args[0].values.filter((v) => v === null || v === "").length;
+    case "CONCAT": {
+      if (args.length === 0) {
+        return err("#VALUE!");
+      }
+      let text = "";
+      for (const value of args.flatMap((arg) => (arg.kind === "range" ? arg.values : [arg.value]))) {
+        if (isError(value)) {
+          return value;
+        }
+        text += toText(value);
+      }
+      return text.length > 32767 ? err("#VALUE!") : text;
+    }
+    case "TEXTJOIN": {
+      if (args.length < 3) {
+        return err("#VALUE!");
+      }
+      // A range of delimiters is used in turn.
+      const delimiters = args[0].kind === "range" ? args[0].values : [args[0].value];
+      const skipEmpty = truth(scalarOf(args[1]));
+      if (isError(skipEmpty)) {
+        return skipEmpty;
+      }
+      const parts: string[] = [];
+      for (const value of args.slice(2).flatMap((arg) => (arg.kind === "range" ? arg.values : [arg.value]))) {
+        if (isError(value)) {
+          return value;
+        }
+        if (skipEmpty && (value === null || value === "")) {
+          continue;
+        }
+        parts.push(toText(value));
+      }
+      let text = parts[0] ?? "";
+      for (let i = 1; i < parts.length; i++) {
+        const delimiter = delimiters[(i - 1) % delimiters.length];
+        if (isError(delimiter)) {
+          return delimiter;
+        }
+        text += toText(delimiter) + parts[i];
+      }
+      return text.length > 32767 ? err("#VALUE!") : text;
+    }
+    case "SORT": {
+      if (args.length < 1 || args.length > 4) {
+        return err("#VALUE!");
+      }
+      const byCol = args[3] ? truth(scalarOf(args[3])) : false;
+      if (isError(byCol)) {
+        return byCol;
+      }
+      const index = args[1] ? toNumber(scalarOf(args[1]) ?? 1) : 1;
+      const order = args[2] ? toNumber(scalarOf(args[2]) ?? 1) : 1;
+      if (isError(index)) {
+        return index;
+      }
+      if (isError(order)) {
+        return order;
+      }
+      // Sorting columns is sorting the rows of the turned-over array.
+      const lines = byCol ? transpose(argMatrix(args[0])) : argMatrix(args[0]);
+      const key = Math.trunc(index) - 1;
+      if (key < 0 || key >= lines[0].length || (order !== 1 && order !== -1)) {
+        return err("#VALUE!");
+      }
+      const sorted = [...lines].sort((a, b) => {
+        const x = a[key];
+        const y = b[key];
+        if ((x === null) !== (y === null)) {
+          return x === null ? 1 : -1;
+        }
+        return order * sortCompare(x, y);
+      });
+      return byCol ? transpose(sorted) : sorted;
+    }
+    case "UNIQUE": {
+      if (args.length < 1 || args.length > 3) {
+        return err("#VALUE!");
+      }
+      const byCol = args[1] ? truth(scalarOf(args[1])) : false;
+      const once = args[2] ? truth(scalarOf(args[2])) : false;
+      if (isError(byCol)) {
+        return byCol;
+      }
+      if (isError(once)) {
+        return once;
+      }
+      const lines = byCol ? transpose(argMatrix(args[0])) : argMatrix(args[0]);
+      const counts = new Map<string, number>();
+      const keyOf = (line: Value[]) => line.map(uniqueKey).join("\u0000");
+      for (const line of lines) {
+        counts.set(keyOf(line), (counts.get(keyOf(line)) ?? 0) + 1);
+      }
+      const seen = new Set<string>();
+      const kept = lines.filter((line) => {
+        const k = keyOf(line);
+        if (seen.has(k) || (once && counts.get(k) !== 1)) {
+          return false;
+        }
+        seen.add(k);
+        return true;
+      });
+      if (kept.length === 0) {
+        return err("#CALC!");
+      }
+      return byCol ? transpose(kept) : kept;
+    }
     case "COUNTIF": {
       if (args.length !== 2 || args[0].kind !== "range" || !args[0].ref) {
         return err("#VALUE!");
@@ -873,7 +1207,32 @@ export function parseConstant(raw: string): Value {
 export type EvalOptions = {
   /** The sheet's size. An array that would spill past it is #SPILL!. */
   bounds?: { rows: number; cols: number };
+  /**
+   * Picks RANDBETWEEN's numbers. The same seed gives the same numbers, so what a cell shows
+   * and what grading sees agree. Change it to recalculate, as Excel does on every edit.
+   */
+  seed?: number;
 };
+
+/** A small fast generator (mulberry32): good enough to pick numbers, and repeatable. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashText(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  }
+  return h >>> 0;
+}
 
 /** Every cell's value, and where dynamic arrays spilled. */
 export type SheetEval = {
@@ -918,7 +1277,21 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
     .sort(byPosition);
   let settled = false;
 
-  const ctx: Ctx = { cell: (addr) => cell(addr) };
+  // Each cell gets its own stream of random numbers, so one cell's RANDBETWEEN doesn't move
+  // when another formula is added.
+  let current = "";
+  const streams = new Map<string, () => number>();
+  const ctx: Ctx = {
+    cell: (addr) => cell(addr),
+    rand: () => {
+      let next = streams.get(current);
+      if (!next) {
+        next = mulberry32(hashText(`${opts.seed ?? 1}|${current}`));
+        streams.set(current, next);
+      }
+      return next();
+    },
+  };
 
   /**
    * Work out every formula not yet done, so all the spills are in place. It can run again from
@@ -962,6 +1335,8 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
 
   function evaluateCell(key: string): void {
     visiting.add(key);
+    const outer = current;
+    current = key;
     let tree = parsed.get(key);
     if (tree === undefined) {
       try {
@@ -972,6 +1347,7 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
       parsed.set(key, tree);
     }
     const result = tree ? evalNode(tree, ctx) : err("#NAME?");
+    current = outer;
     visiting.delete(key);
     done.add(key);
     place(key, result);

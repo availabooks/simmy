@@ -18,14 +18,53 @@ export type CellStyle = {
 
 export type Outline = { range: Range; weight: 1 | 2; color: string };
 
-/** One rubric rule, as the add-in's grader defines it. */
+/** A literal value a rule compares with. */
+export type Scalar = string | number | boolean;
+
+/** One rubric rule, mirroring one of the add-in's grading steps (named after each kind). */
 export type RubricRule =
-  /** values_match: the cell equals what the solution formula gives on the student's own sheet. */
-  | { kind: "value"; points: number; message: string; cell: string; formula: string }
+  /**
+   * values_match: the cell equals what the solution formula gives on the student's own sheet.
+   * With `range`, every cell of it matches the formula's array, for a result that spills;
+   * `cell` is then the range's top-left.
+   */
+  | { kind: "value"; points: number; message: string; cell: string; range?: string; formula: string }
   /** find_references: the formula refers to `ref`; with `forms`, only those $ spellings count. */
   | { kind: "reference"; points: number; message: string; cell: string; ref: string; forms?: string[] }
   /** cells_copied: every cell holds the same formula as the first, copied down or across. */
-  | { kind: "copied"; points: number; message: string; range: string };
+  | { kind: "copied"; points: number; message: string; range: string }
+  /**
+   * value_correct and value_correct_tolerance: the cell holds this value exactly, or one of a
+   * list; within `tolerance` for a number; ignoring all spaces with `trim`.
+   */
+  | {
+      kind: "equals";
+      points: number;
+      message: string;
+      cell: string;
+      value: Scalar | Scalar[];
+      tolerance?: number;
+      trim?: boolean;
+    }
+  /** formula_contains: every cell of the range holds a formula that includes `text`, ignoring case. */
+  | { kind: "contains"; points: number; message: string; range: string; text: string }
+  /** check_name_exists, or check_named_range with `range`: the name is defined, for that range. */
+  | { kind: "name"; points: number; message: string; name: string; range?: string }
+  /**
+   * value_between: every cell of the range is a number from `lower` to `upper` (each a number
+   * or a formula), including both unless `endpoints` is "exclude".
+   */
+  | {
+      kind: "between";
+      points: number;
+      message: string;
+      range: string;
+      lower: number | string;
+      upper: number | string;
+      endpoints: "include" | "exclude";
+    }
+  /** activecell: the student ended on this range, by Go To, the Name Box or by clicking. */
+  | { kind: "selected"; points: number; message: string; range: string };
 
 export type SimTask = {
   id: string;

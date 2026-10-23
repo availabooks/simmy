@@ -37,7 +37,7 @@ describe("unknownKeys", () => {
       { kind: "reference", points: 1, message: "m", cell: "D6", ref: "B2", froms: "x" },
     ];
     expect(unknownKeys({ tasks: [{ rules }] })).toEqual([
-      'tasks[0].rules[0].cell: only "value" and "reference" rules use this, not "copied"',
+      'tasks[0].rules[0].cell: only "value", "reference", "equals", "contains" or "between" rules use this, not "copied"',
       'tasks[0].rules[1].ref: only "reference" rules use this, not "value"',
       'tasks[0].rules[2].froms: unknown key; did you mean "forms"?',
     ]);

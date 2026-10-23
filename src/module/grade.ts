@@ -2,25 +2,29 @@
  * What Do it writes, and a local version of the add-in's rubric. Grading is
  * generic: every check comes from the module's rules.
  */
+import { lookupName, nameRange } from "../engine/names.ts";
 import {
   addrName,
+  evaluateExpression,
   evaluateFormulaAt,
   evaluateSheet,
   type EvalOptions,
   formulaReferences,
   inRange,
   type Inputs,
+  isError,
   isFormula,
   normalizeFormula,
   parseAddr,
   parseRange,
   type Range,
   rangeAddrs,
+  rangeName,
   shiftFormula,
   type Value,
 } from "../engine/sheet.ts";
 import { applyChange, type Change, toState, type WorkbookState } from "../engine/workbook.ts";
-import type { RubricRule, SimModule, SimTask } from "./types.ts";
+import type { RubricRule, Scalar, SimModule, SimTask } from "./types.ts";
 
 /** The cells as the module builds them, before the student types anything. */
 export function initialInputs(mod: SimModule): Inputs {
@@ -86,6 +90,23 @@ export type GradeReport = { tasks: TaskGrade[]; earned: number; points: number }
 /** A cell well away from the sheet, where the grader works out expected values. */
 const SCRATCH = { col: 25, row: 98 };
 
+/**
+ * value_correct: exactly the value, as the add-in compares it. A number may be off by up to
+ * `tolerance`; with `trim`, text ignores every space. An error matches its code ("#N/A").
+ */
+function equalsValue(actual: Value, expected: Scalar, tolerance?: number, trim?: boolean): boolean {
+  if (isError(actual)) {
+    return actual.error === expected;
+  }
+  if (typeof actual === "number" && typeof expected === "number" && tolerance !== undefined) {
+    return Math.abs(actual - expected) <= tolerance;
+  }
+  if (trim && typeof actual === "string" && typeof expected === "string") {
+    return actual.replace(/\s+/g, "") === expected.replace(/\s+/g, "");
+  }
+  return actual === expected;
+}
+
 function sameValue(actual: Value, expected: Value): boolean {
   if (typeof expected === "number" && typeof actual === "number") {
     return Math.abs(actual - expected) <= 1e-9 * Math.max(1, Math.abs(expected));
@@ -100,8 +121,62 @@ function passes(rule: RubricRule, book: WorkbookState, values: Record<string, Va
   const { inputs, names } = book;
   switch (rule.kind) {
     case "value": {
-      const expected = evaluateFormulaAt(inputs, rule.formula, SCRATCH, options(book));
-      return sameValue(values[rule.cell] ?? null, expected);
+      if (!rule.range) {
+        const expected = evaluateFormulaAt(inputs, rule.formula, SCRATCH, options(book));
+        return sameValue(values[rule.cell] ?? null, expected);
+      }
+      // A spilled result: the formula's array must fill the range exactly.
+      const range = parseRange(rule.range) as Range;
+      const result = evaluateExpression(inputs, rule.formula, options(book));
+      const expected = Array.isArray(result) ? result : [[result]];
+      if (expected.length !== range.r2 - range.r1 + 1 || expected[0].length !== range.c2 - range.c1 + 1) {
+        return false;
+      }
+      return rangeAddrs(range).every((addr) =>
+        sameValue(values[addrName(addr)] ?? null, expected[addr.row - range.r1][addr.col - range.c1]),
+      );
+    }
+    case "equals": {
+      const actual = values[rule.cell] ?? null;
+      const accepted = Array.isArray(rule.value) ? rule.value : [rule.value];
+      return accepted.some((value) => equalsValue(actual, value, rule.tolerance, rule.trim));
+    }
+    case "contains": {
+      // As the add-in does, only a formula counts: a typed value never contains the text.
+      const text = rule.text.toUpperCase();
+      return rangeAddrs(parseRange(rule.range) as Range).every((addr) => {
+        const raw = inputs[addrName(addr)];
+        return isFormula(raw) && raw.toUpperCase().includes(text);
+      });
+    }
+    case "name": {
+      if (!rule.range) {
+        return lookupName(names, rule.name) !== null;
+      }
+      // With a range the add-in matches the name's case exactly, and ignores $ signs.
+      const ref = names[rule.name];
+      const named = ref === undefined ? null : nameRange(ref);
+      return named !== null && rangeName(named) === rangeName(parseRange(rule.range) as Range);
+    }
+    case "between": {
+      const bound = (value: number | string): Value =>
+        typeof value === "number" ? value : evaluateFormulaAt(inputs, value, SCRATCH, options(book));
+      const lower = bound(rule.lower);
+      const upper = bound(rule.upper);
+      if (typeof lower !== "number" || typeof upper !== "number") {
+        return false;
+      }
+      return rangeAddrs(parseRange(rule.range) as Range).every((addr) => {
+        const value = values[addrName(addr)];
+        if (typeof value !== "number") {
+          return false;
+        }
+        return rule.endpoints === "exclude" ? value > lower && value < upper : value >= lower && value <= upper;
+      });
+    }
+    case "selected": {
+      const at = book.selection ? parseRange(book.selection) : null;
+      return at !== null && rangeName(at) === rangeName(parseRange(rule.range) as Range);
     }
     case "reference": {
       const raw = inputs[rule.cell];
@@ -171,7 +246,12 @@ export function solvedInputs(mod: SimModule): Inputs {
   return solvedState(mod).inputs;
 }
 
-/** Every task done with Do it: the workbook a perfect student hands in. */
+/**
+ * Every task done with Do it: the workbook a perfect student hands in. Where a rule asks for
+ * the selection to end somewhere, it ends there.
+ */
 export function solvedState(mod: SimModule): WorkbookState {
-  return mod.tasks.reduce((state, task) => applyChange(state, doIt(task)), initialState(mod));
+  const solved = mod.tasks.reduce((state, task) => applyChange(state, doIt(task)), initialState(mod));
+  const selected = mod.tasks.flatMap((task) => task.rules).find((rule) => rule.kind === "selected");
+  return selected ? { ...solved, selection: selected.range } : solved;
 }

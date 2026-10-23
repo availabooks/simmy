@@ -11,9 +11,14 @@ export type Shape = { [key: string]: Shape | Shape[] | true } | "any-keys";
 const titled: Shape = { title: true, text: true };
 
 export const RULE_KEYS: Record<string, string[]> = {
-  value: ["cell", "formula"],
+  value: ["cell", "range", "formula"],
   reference: ["cell", "ref", "forms"],
   copied: ["range"],
+  equals: ["cell", "value", "tolerance", "trim"],
+  contains: ["cell", "range", "text"],
+  name: ["name", "range"],
+  between: ["cell", "range", "lower", "upper", "endpoints"],
+  selected: ["range"],
 };
 
 export const MODULE: Shape = {
@@ -56,6 +61,11 @@ export const MODULE: Shape = {
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** "a", "a or b", "a, b or c". */
+function listOr(items: string[]): string {
+  return items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
+}
 
 /** Edit distance, to suggest the key that was probably meant. */
 function distance(a: string, b: string): number {
@@ -111,7 +121,7 @@ export function unknownKeys(data: unknown): string[] {
         const kinds = Object.keys(RULE_KEYS).filter((kind) => RULE_KEYS[kind].includes(key));
         out.push(
           kinds.length > 0
-            ? `${path}.${key}: only ${kinds.map((kind) => `"${kind}"`).join(" and ")} rules use this, not "${rule.kind}"`
+            ? `${path}.${key}: only ${listOr(kinds.map((kind) => `"${kind}"`))} rules use this, not "${rule.kind}"`
             : unknownKey(path, key, known),
         );
       }

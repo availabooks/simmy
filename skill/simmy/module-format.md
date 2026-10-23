@@ -67,16 +67,29 @@ Any other style key is an error.
   name: Line cost        # the pane's tab label; default: the id
   text: In E5, calculate the cost, then copy it down through E7.   # required
   details: [Cost is price times quantity.]                         # extra bullet points
-  range: E5:E7           # required: where Do it writes the solution
+  range: E5:E7           # where Do it writes the solution; given together with solution
   hint: E5               # the cell selected when the task opens; default: the range's top-left
-  solution: =C5*D5       # required: the formula for the range's top-left cell
+  solution: =C5*D5       # the formula for the range's top-left cell
+  names: { Rate: G2 }    # names Do it defines (and Undo it deletes)
   points: 10             # default: the rules' points added up
   rules: [...]
 ```
 
-Do it writes `solution` into every cell of `range`, shifting relative references as a fill would,
-so write it for the top-left cell. `simmy validate` grades that result and reports any rule it
-fails.
+A task needs `range` and `solution`, or `names`, or both. Do it writes `solution` into every
+cell of `range`, shifting relative references as a fill would, so write it for the top-left
+cell, and defines the task's `names`. `simmy validate` grades that result and reports any rule
+it fails.
+
+A formula that spills (SORT, UNIQUE, SEQUENCE, or a range such as `=A2:A9*2`) goes in one cell:
+make `range` that one cell, and grade the cells it fills with a `value` rule's `range`.
+
+## Names
+
+`workbook.names` defines names from the start, and a task's `names` are what its Do it defines:
+`{ Rate: G2, Sales: D2:D9 }`. A name follows Excel's rules: a letter, `_` or `\` first, then
+letters, numbers, `.` and `_`; no spaces; nothing that reads as a cell reference (`Q1`, `R1C1`);
+not `C` or `R`; at most 255 characters. Names match without regard to case. Every name a
+formula uses must be defined in one of those places, and `simmy validate` says when one isn't.
 
 ## Rules
 
@@ -85,9 +98,19 @@ fails, so write it as advice: "E5 should use the price in C5."
 
 | Kind | Keys | Passes when |
 |---|---|---|
-| `value` | `cell`, `formula` | `cell`'s value equals what `formula` gives on the student's own sheet. Write `formula` with `$` on every reference (or plain cells), since it is evaluated away from the cell. Numbers match within rounding error. |
-| `reference` | `cell`, `ref`, optional `forms` | `cell` holds a formula that refers to `ref`, alone or inside a range (`SUM(C2:C5)` refers to C3). With `forms`, a reference must be spelled exactly as one of them: `forms: [$C$2, C$2]` requires the row locked. A typed number never passes. |
+| `value` | `cell` or `range`, `formula` | The cell's value equals what `formula` gives on the student's own sheet. Write `formula` with `$` on every reference (or plain cells), since it is evaluated away from the cell. Numbers match within rounding error. With `range`, `formula`'s array must fill the range exactly: use it for a result that spills. |
+| `reference` | `cell`, `ref`, optional `forms` | `cell` holds a formula that refers to `ref`, alone or inside a range (`SUM(C2:C5)` refers to C3), or through a name for it. With `forms`, a reference must be spelled exactly as one of them: `forms: [$C$2, C$2]` requires the row locked. A typed number never passes. |
 | `copied` | `range` | Every cell in `range` holds the first cell's formula, shifted as a fill would shift it. |
+| `equals` | `cell`, `value`, optional `tolerance`, `trim` | The cell holds `value` exactly (text, a number, true/false, or an error such as `"#N/A"`), or any of a list of them. A number may be off by up to `tolerance`; with `trim: true`, text ignores every space. |
+| `contains` | `cell` or `range`, `text` | Every cell holds a formula that includes `text`, ignoring case: `text: "TEXTJOIN("` checks the function was used. A typed value never passes. |
+| `name` | `name`, optional `range` | The name is defined (any case). With `range`, it is spelled exactly so and refers to that range. |
+| `between` | `cell` or `range`, `lower`, `upper`, optional `endpoints` | Every cell is a number from `lower` to `upper` (each a number or a formula), both included unless `endpoints: exclude`. Use it with `contains` to grade RANDBETWEEN, whose numbers change. |
+| `selected` | `range` | The student ended on this range: by Go To, the Name Box, or a click. At most one per module. |
+
+Each kind mirrors a grading step of the Excel Educator add-in: `value` is values_match,
+`reference` find_references, `copied` cells_copied, `equals` value_correct (and
+value_correct_tolerance), `contains` formula_contains, `name` check_name_exists and
+check_named_range, `between` value_between, and `selected` activecell.
 
 A task scores its `points` minus the points of the rules it fails, never below 0. To give full
 credit only for a right formula, put most points on `value`. To require that inputs are

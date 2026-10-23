@@ -1506,7 +1506,7 @@ export function Workbook(props: WorkbookProps) {
         {paneOpen && (
           <TaskPane
             key={paneKey}
-            state={book.state}
+            state={{ ...book.state, selection: rangeName(selRange) }}
             onSelect={selectFromPane}
             onChange={apply}
             onClose={() => setPaneOpen(false)}

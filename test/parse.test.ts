@@ -107,7 +107,7 @@ autopilot:
       expect.stringMatching(/^sheet\.cells\.B1: "=SUM\(" is not a formula Excel would accept/),
       expect.stringMatching(/^sheet\.styles\[0\]\.format: must be one of/),
       "sheet.styles[0].wobble: is not a style this simulator knows",
-      'tasks[0].rules[0].kind: must be "value", "reference" or "copied"',
+      'tasks[0].rules[0].kind: must be one of "value", "reference", "copied", "equals", "contains", "name", "between", "selected"',
       'tasks[0].solution: "A1*2" must start with =',
       'tasks[1].id: "A" is used by another task',
       'autopilot[0].task: no task has id "Q"',

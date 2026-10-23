@@ -20,7 +20,17 @@ import {
   type Range,
   rangeAddrs,
 } from "../engine/sheet.ts";
-import type { CellStyle, Outline, PilotLine, PilotStep, RubricRule, SimCopy, SimModule, SimTask } from "./types.ts";
+import type {
+  CellStyle,
+  Outline,
+  PilotLine,
+  PilotStep,
+  RubricRule,
+  Scalar,
+  SimCopy,
+  SimModule,
+  SimTask,
+} from "./types.ts";
 
 export class ModuleError extends Error {
   // A plain field, not a parameter property: the publish scripts run this file with Node's
@@ -33,6 +43,8 @@ export class ModuleError extends Error {
     this.name = "ModuleError";
   }
 }
+
+const RULE_KINDS = ["value", "reference", "copied", "equals", "contains", "name", "between", "selected"];
 
 const FORMATS: NumberFormat[] = ["General", "0", "0.00", "$#,##0.00", "0.00%", "accounting"];
 
@@ -116,6 +128,13 @@ export function parseModule(data: unknown): SimModule {
       return [];
     }
     return value;
+  };
+  const scalar = (value: unknown, path: string): Scalar => {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return value;
+    }
+    fail(path, "must be text, a number, or true or false");
+    return "";
   };
   const strings = (value: unknown, path: string): string[] =>
     list(value, path).map((item, i) => str(item, `${path}[${i}]`));
@@ -315,9 +334,59 @@ export function parseModule(data: unknown): SimModule {
       const r = obj(ruleItem, rp);
       const points = num(r.points, `${rp}.points`);
       const message = str(r.message, `${rp}.message`);
+      // Rules that check a cell or a range take either key, never both.
+      const cellOrRange = (): string => {
+        if (r.cell !== undefined && r.range !== undefined) {
+          fail(rp, 'give "cell" or "range", not both');
+        }
+        return r.range !== undefined ? rangeRef(r.range, `${rp}.range`) : cellRef(r.cell, `${rp}.cell`);
+      };
       switch (r.kind) {
-        case "value":
-          return { kind: "value", points, message, cell: cellRef(r.cell, `${rp}.cell`), formula: formula(r.formula, `${rp}.formula`) };
+        case "value": {
+          const at = cellOrRange();
+          const parsed = parseRange(at);
+          const cell = parsed ? addrName({ col: parsed.c1, row: parsed.r1 }) : at;
+          const range = r.range !== undefined ? at : undefined;
+          return { kind: "value", points, message, cell, range, formula: formula(r.formula, `${rp}.formula`) };
+        }
+        case "equals": {
+          const value = Array.isArray(r.value) ? r.value.map((v, k) => scalar(v, `${rp}.value[${k}]`)) : scalar(r.value, `${rp}.value`);
+          const tolerance = r.tolerance === undefined ? undefined : num(r.tolerance, `${rp}.tolerance`);
+          if (r.trim !== undefined && typeof r.trim !== "boolean") {
+            fail(`${rp}.trim`, "must be true or false");
+          }
+          return { kind: "equals", points, message, cell: cellRef(r.cell, `${rp}.cell`), value, tolerance, trim: r.trim === true };
+        }
+        case "contains":
+          return { kind: "contains", points, message, range: cellOrRange(), text: str(r.text, `${rp}.text`) };
+        case "name": {
+          const name = str(r.name, `${rp}.name`);
+          const problem = nameProblem(name);
+          if (problem) {
+            fail(`${rp}.name`, problem);
+          }
+          const range = r.range === undefined ? undefined : rangeRef(r.range, `${rp}.range`);
+          return { kind: "name", points, message, name, range };
+        }
+        case "between": {
+          const bound = (value: unknown, key: string): number | string =>
+            typeof value === "string" ? formula(value, `${rp}.${key}`) : num(value, `${rp}.${key}`);
+          const endpoints = r.endpoints ?? "include";
+          if (endpoints !== "include" && endpoints !== "exclude") {
+            fail(`${rp}.endpoints`, 'must be "include" or "exclude"');
+          }
+          return {
+            kind: "between",
+            points,
+            message,
+            range: cellOrRange(),
+            lower: bound(r.lower, "lower"),
+            upper: bound(r.upper, "upper"),
+            endpoints: endpoints === "exclude" ? "exclude" : "include",
+          };
+        }
+        case "selected":
+          return { kind: "selected", points, message, range: rangeRef(r.range, `${rp}.range`) };
         case "reference": {
           const forms = r.forms === undefined ? undefined : strings(r.forms, `${rp}.forms`).map((f) => f.toUpperCase());
           return { kind: "reference", points, message, cell: cellRef(r.cell, `${rp}.cell`), ref: cellRef(r.ref, `${rp}.ref`), forms };
@@ -325,7 +394,7 @@ export function parseModule(data: unknown): SimModule {
         case "copied":
           return { kind: "copied", points, message, range: rangeRef(r.range, `${rp}.range`) };
         default:
-          fail(`${rp}.kind`, 'must be "value", "reference" or "copied"');
+          fail(`${rp}.kind`, `must be one of ${RULE_KINDS.map((kind) => `"${kind}"`).join(", ")}`);
           return { kind: "copied", points, message, range: "A1" };
       }
     });
@@ -349,6 +418,12 @@ export function parseModule(data: unknown): SimModule {
   });
   if (tasks.length === 0) {
     fail("tasks", "needs at least one task");
+  }
+  const selectedRules = tasks.flatMap((task, i) =>
+    task.rules.flatMap((rule, j) => (rule.kind === "selected" ? [`tasks[${i}].rules[${j}]`] : [])),
+  );
+  if (selectedRules.length > 1) {
+    fail(selectedRules[1], 'only one "selected" rule makes sense, since the selection ends in one place');
   }
   const ids = new Set<string>();
   tasks.forEach((task, i) => {

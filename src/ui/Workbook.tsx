@@ -31,6 +31,7 @@ import { absoluteRef, lookupName, nameForRange, nameProblem, nameRange } from ".
 import { applyChange, type Change, nextSeed, type WorkbookState } from "../engine/workbook.ts";
 import { initialState } from "../module/grade.ts";
 import { Menu } from "./Menu.tsx";
+import { GoToDialog } from "./NameDialogs.tsx";
 import type { CellStyle, SimModule } from "../module/types.ts";
 import type { WorkbookApi } from "./autopilot.ts";
 import { useSim } from "./context.ts";
@@ -49,6 +50,8 @@ const SIGNATURES: Record<string, string> = Object.fromEntries(FUNCTIONS.map((fn)
 type Selection = { anchor: Addr; focus: Addr };
 /** An entry in the formula autocomplete list: a function (inserted with its "(") or a defined name. */
 type Suggestion = { name: string; summary: string; call: boolean };
+/** An open dialog. Dialogs stack: Name Manager can open New Name over itself. */
+type DialogState = { kind: "goto" };
 /** Excel's message box. `formula` adds its note about formulas; `from` is where focus goes back. */
 type Alert = { message: string; formula?: boolean; from: "editor" | "namebox" };
 type Point = { start: number; end: number; anchor: Addr; focus: Addr };
@@ -156,6 +159,12 @@ export function Workbook(props: WorkbookProps) {
   const [clip, setClip] = useState<Clip | null>(null);
   const [fillTarget, setFillTarget] = useState<Range | null>(null);
   const [alert, setAlert] = useState<Alert | null>(null);
+  const [dialogs, setDialogs] = useState<DialogState[]>([]);
+  const openDialog = (dialog: DialogState) => setDialogs((open) => [...open, dialog]);
+  const closeDialog = () => {
+    setDialogs((open) => open.slice(0, -1));
+    focusGrid();
+  };
   const [paneOpen, setPaneOpen] = useState(true);
   const [tab, setTab] = useState<RibbonTab>("Home");
   const [ribbonCollapsed, setRibbonCollapsed] = useState(props.ribbonCollapsed ?? false);
@@ -762,6 +771,9 @@ export function Workbook(props: WorkbookProps) {
       } else if (lower === "a") {
         handled();
         setSel({ anchor: { col: 0, row: 0 }, focus: { col: cols - 1, row: rowCount - 1 } });
+      } else if (lower === "g") {
+        handled();
+        openDialog({ kind: "goto" });
       }
       return;
     }
@@ -798,6 +810,11 @@ export function Workbook(props: WorkbookProps) {
       case "F2":
         handled();
         startEdit(inputs[addrName(active)] ?? "", "edit");
+        return;
+      case "F5":
+        // Go To, and not the browser's reload.
+        handled();
+        openDialog({ kind: "goto" });
         return;
       case "F9":
         // F9, Shift+F9 and Ctrl+Alt+F9 all recalculate; with one sheet they do the same.
@@ -1157,6 +1174,7 @@ export function Workbook(props: WorkbookProps) {
             onClear={command(clear)}
             onFillDown={command(() => fill("down"))}
             onCalculateNow={command(recalculate)}
+            onGoTo={command(() => openDialog({ kind: "goto" }))}
           />
         )}
       </div>
@@ -1472,6 +1490,24 @@ export function Workbook(props: WorkbookProps) {
           <span class="xd-zoom-pct">100%</span>
         </span>
       </div>
+      {dialogs.map((dialog, i) => (
+        <div key={i} class="xd-dialog-layer" inert={i < dialogs.length - 1}>
+          {dialog.kind === "goto" && (
+            <GoToDialog
+              names={names}
+              onCancel={closeDialog}
+              onGo={(text) => {
+                const range = resolveReference(text);
+                if (range) {
+                  selectRange(range);
+                  closeDialog();
+                }
+                return range !== null;
+              }}
+            />
+          )}
+        </div>
+      ))}
       {alert && (
         <div class="xd-alert-veil">
           <div class="xd-alert" role="alertdialog" aria-label="Microsoft Excel">

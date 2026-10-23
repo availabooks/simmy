@@ -58,6 +58,8 @@ export type RibbonProps = {
   onFillDown: () => void;
   /** Calculate Now and Calculate Sheet: recalculate, so RANDBETWEEN picks new numbers. */
   onCalculateNow: () => void;
+  /** Home › Find & Select › Go To. */
+  onGoTo: () => void;
 };
 
 /** The tab row. `tab` is null while the ribbon is collapsed, so no tab shows as selected. */
@@ -355,16 +357,37 @@ function HomeGroups(props: RibbonProps) {
             </svg>
           }
         />
-        <BigButton
-          label="Find & Select"
-          dropdown
-          icon={
-            <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
-              <circle cx="13" cy="13" r="7.5" fill="#fff" stroke="#616161" stroke-width="1.5" />
-              <path d="M18.5 18.5L27 27" stroke="#616161" stroke-width="2.5" stroke-linecap="round" />
-            </svg>
-          }
-        />
+        <Menu
+          trigger={(open, toggle) => (
+            <BigButton
+              label="Find & Select"
+              dropdown
+              active={open}
+              onClick={toggle}
+              icon={
+                <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
+                  <circle cx="13" cy="13" r="7.5" fill="#fff" stroke="#616161" stroke-width="1.5" />
+                  <path d="M18.5 18.5L27 27" stroke="#616161" stroke-width="2.5" stroke-linecap="round" />
+                </svg>
+              }
+            />
+          )}
+        >
+          {(close) => (
+            <>
+              <MenuItem label="Find…" />
+              <MenuItem label="Replace…" />
+              <MenuItem
+                label="Go To…"
+                onClick={() => {
+                  close();
+                  props.onGoTo();
+                }}
+              />
+              <MenuItem label="Go To Special…" />
+            </>
+          )}
+        </Menu>
       </Group>
     </>
   );
@@ -487,6 +510,21 @@ function FormulaGroups(props: RibbonProps) {
         </div>
       </Group>
     </>
+  );
+}
+
+/** A menu entry. Without `onClick` it's one of Excel's the simulator doesn't run, and says so. */
+function MenuItem({ label, onClick }: { label: string; onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      class={`xd-menu-item${onClick ? "" : " is-idle"}`}
+      title={onClick ? undefined : idleTitle(label, onClick)}
+      aria-disabled={onClick ? undefined : "true"}
+      onClick={onClick}
+    >
+      {label}
+    </button>
   );
 }
 

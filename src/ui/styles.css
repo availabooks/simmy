@@ -1582,6 +1582,16 @@ button:focus-visible {
   background: #e8e8e8;
 }
 
+/* One of Excel's menu entries the simulator doesn't run. */
+.xd-menu-item.is-idle {
+  color: #a6a6a6;
+  cursor: default;
+}
+
+.xd-menu-item.is-idle:hover {
+  background: none;
+}
+
 @container (max-width: 1320px) {
   .xd-group.is-collapsible {
     display: none;
@@ -2228,6 +2238,188 @@ button:focus-visible {
   background: #0067c0;
   color: #fff;
   cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- dialogs */
+
+/* Excel's dialogs (Go To, New Name, Name Manager…) cover the Excel window, as Excel's modal ones do. */
+.xd-dialog-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+}
+
+.xd-dialog-veil {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.06);
+}
+
+.xd-dialog {
+  max-width: 92%;
+  margin: 0;
+  border: 1px solid #8a8a8a;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.3);
+  color: var(--xd-text);
+  font: 12px var(--ui-font);
+  overflow: hidden;
+}
+
+.xd-dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 6px 12px;
+}
+
+.xd-dialog-x {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: #262626;
+  cursor: pointer;
+}
+
+.xd-dialog-x:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.xd-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 14px 12px;
+}
+
+.xd-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 14px;
+}
+
+.xd-dialog-extra {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+}
+
+.xd-dialog-btn {
+  min-width: 76px;
+  padding: 4px 12px;
+  border: 1px solid #c4c4c4;
+  border-radius: 4px;
+  background: #fdfdfd;
+  color: var(--xd-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.xd-dialog-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+
+.xd-dialog-btn:disabled {
+  color: #a6a6a6;
+  cursor: default;
+}
+
+.xd-dialog-btn.is-default {
+  border-color: #0067c0;
+  background: #0067c0;
+  color: #fff;
+}
+
+.xd-dialog-btn.is-default:hover {
+  background: #1975c5;
+}
+
+.xd-dialog-error {
+  margin: 0;
+  color: #c42b1c;
+}
+
+.xd-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.xd-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.xd-field-row > span {
+  flex: none;
+  width: 72px;
+}
+
+.xd-field {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid #8a8a8a;
+  border-radius: 3px;
+  background: #fff;
+  color: var(--xd-text);
+  font: inherit;
+}
+
+.xd-field:focus {
+  border-color: #0067c0;
+  outline: 1px solid #0067c0;
+}
+
+.xd-field:disabled {
+  border-color: #c4c4c4;
+  background: #f3f3f3;
+  color: #616161;
+}
+
+textarea.xd-field {
+  height: 48px;
+  padding: 4px 6px;
+  resize: none;
+}
+
+.xd-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.xd-listbox {
+  height: 132px;
+  border: 1px solid #8a8a8a;
+  overflow: auto;
+}
+
+.xd-option {
+  padding: 2px 6px;
+  cursor: default;
+  user-select: none;
+}
+
+.xd-option.is-on {
+  background: #0067c0;
+  color: #fff;
+}
+
+.xd-option:focus-visible {
+  outline: 1px dotted #262626;
+  outline-offset: -1px;
 }
 
 /* ------------------------------------------------------------- task pane */

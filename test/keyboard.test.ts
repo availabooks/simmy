@@ -80,7 +80,30 @@ async function sheet() {
   };
   const alert = () => shadow.querySelector(".xd-alert")?.textContent ?? null;
   const suggestions = () => [...shadow.querySelectorAll(".xd-suggest li")].map((li) => li.textContent);
-  return { press, type, goTo, editor, cellText, alert, suggestions, active: () => nameBox.value };
+  const dialog = () => shadow.querySelector<HTMLFormElement>(".xd-dialog");
+  /** Fill a dialog's field by its label text. */
+  const fill = (label: string, value: string) => {
+    const field = [...(dialog()?.querySelectorAll("label") ?? [])]
+      .find((l) => l.textContent?.trim().startsWith(label))
+      ?.querySelector("input") as HTMLInputElement;
+    field.value = value;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const ok = () => dialog()?.querySelector<HTMLButtonElement>(".xd-dialog-btn.is-default")?.click();
+  return {
+    press,
+    type,
+    goTo,
+    editor,
+    cellText,
+    alert,
+    suggestions,
+    dialog,
+    fill,
+    ok,
+    grid,
+    active: () => nameBox.value,
+  };
 }
 
 describe("keyboard movement", () => {
@@ -276,5 +299,54 @@ describe("the Name Box", () => {
     s.press("z", false, true);
     s.goTo("C2");
     expect(s.active()).toBe("C2");
+  });
+});
+
+describe("Go To", () => {
+  it("opens with F5 or Ctrl+G and goes to a reference", async () => {
+    const s = await sheet();
+    s.press("F5");
+    expect(s.dialog()?.getAttribute("aria-label")).toBe("Go To");
+    s.fill("Reference", "J20");
+    s.ok();
+    expect(s.dialog()).toBeNull();
+    expect(s.active()).toBe("J20");
+    s.press("g", false, true);
+    expect(s.dialog()).not.toBeNull();
+  });
+
+  it("lists the names and goes to one", async () => {
+    const s = await sheet();
+    s.goTo("C2");
+    s.goTo("Rate");
+    s.goTo("H8");
+    s.press("F5");
+    expect(s.dialog()?.querySelector(".xd-listbox")?.textContent).toBe("Rate");
+    s.fill("Reference", "Rate");
+    s.ok();
+    expect(s.active()).toBe("Rate");
+  });
+
+  it("goes to a whole spill with A1#", async () => {
+    const s = await sheet();
+    s.goTo("H8");
+    s.type("=SEQUENCE(3)");
+    s.press("Enter");
+    s.press("F5");
+    s.fill("Reference", "H8#");
+    s.ok();
+    // The selection box is drawn over three rows of 20px (plus the gridline).
+    const box = s.grid.querySelector<HTMLElement>(".xd-selbox");
+    expect(box?.style.height).toBe("61px");
+  });
+
+  it("says when a reference isn't valid, and closes on Escape without the grid seeing it", async () => {
+    const s = await sheet();
+    s.press("F5");
+    s.fill("Reference", "Nowhere");
+    s.ok();
+    expect(s.dialog()?.textContent).toContain("Reference isn't valid.");
+    s.dialog()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+    expect(s.dialog()).toBeNull();
   });
 });

@@ -179,3 +179,28 @@ describe("Tab then Enter", () => {
     expect(s.active()).toBe("H10");
   });
 });
+
+describe("F4 while typing a formula", () => {
+  it("steps the reference before the caret through $A$1, A$1 and $A1", async () => {
+    const s = await sheet();
+    s.goTo("H8");
+    s.type("=C2*D2");
+    const forms = [];
+    for (let i = 0; i < 4; i++) {
+      s.press("F4");
+      forms.push(s.editor()?.value);
+    }
+    expect(forms).toEqual(["=C2*$D$2", "=C2*D$2", "=C2*$D2", "=C2*D2"]);
+  });
+
+  it("keeps the $ when the formula is entered", async () => {
+    const s = await sheet();
+    s.goTo("H8");
+    s.type("=C2");
+    s.press("F4");
+    s.press("Enter");
+    s.goTo("H8");
+    s.press("F2");
+    expect(s.editor()?.value).toBe("=$C$2");
+  });
+});

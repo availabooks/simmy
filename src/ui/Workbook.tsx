@@ -4,6 +4,7 @@ import {
   type Addr,
   addrName,
   checkFormula,
+  cycleReference,
   type Clip,
   colName,
   copyRange,
@@ -804,6 +805,23 @@ export function Workbook(props: WorkbookProps) {
       return;
     }
     const key = event.key;
+    if (key === "F4") {
+      // Step the reference at the caret (or the selected ones) through $A$1, A$1 and $A1.
+      const input = event.currentTarget;
+      const from = input.selectionStart ?? caret;
+      const to = input.selectionEnd ?? caret;
+      const next = cycleReference(current.text, from, to);
+      if (!next) {
+        return;
+      }
+      event.preventDefault();
+      setEditText(next.text, next.end);
+      // With text selected, keep it selected; otherwise the caret stays after the reference,
+      // so another F4 steps the same one.
+      const [start, end] = from === to ? [next.end, next.end] : [next.start, next.end];
+      window.requestAnimationFrame(() => input.setSelectionRange(start, end));
+      return;
+    }
     if (suggestions.length > 0) {
       if (key === "ArrowDown" || key === "ArrowUp") {
         event.preventDefault();

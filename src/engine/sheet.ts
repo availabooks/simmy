@@ -1811,6 +1811,72 @@ export function normalizeFormula(formula: string): string {
   return `=${body}${")".repeat(Math.max(0, open - close))}`;
 }
 
+/**
+ * F4 while typing a formula: the reference at the caret, or every reference the selection
+ * touches, moves to its next form, A1 → $A$1 → A$1 → $A1 → A1. Both ends of a range such as
+ * A1:B2 change together, taking the form after the first end's. Returns the new text and the
+ * span to select (so the next F4 changes the same reference), or null when there's nothing to
+ * change.
+ */
+export function cycleReference(
+  text: string,
+  selStart: number,
+  selEnd: number,
+): { text: string; start: number; end: number } | null {
+  if (!text.startsWith("=")) {
+    return null;
+  }
+  let tokens: Token[];
+  try {
+    tokens = tokenize(text.slice(1));
+  } catch {
+    return null;
+  }
+  // A reference, or a range's two references, with positions in the whole text.
+  const units: { parts: Token[]; start: number; end: number }[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.kind !== "ref") {
+      continue;
+    }
+    const colon = tokens[i + 1];
+    const next = tokens[i + 2];
+    const parts = colon?.kind === "op" && colon.text === ":" && next?.kind === "ref" ? [token, next] : [token];
+    const last = parts[parts.length - 1];
+    units.push({ parts, start: token.start + 1, end: last.start + last.text.length + 1 });
+    i += parts.length === 2 ? 2 : 0;
+  }
+  const chosen =
+    selStart === selEnd
+      ? units.filter((u) => u.start <= selStart && selStart <= u.end).slice(0, 1)
+      : units.filter((u) => u.start < selEnd && u.end > selStart);
+  if (chosen.length === 0) {
+    return null;
+  }
+  const first = /^(\$?)[A-Za-z]+(\$?)/.exec(chosen[0].parts[0].text);
+  const [col, row] = [first?.[1] === "$", first?.[2] === "$"];
+  // The order Excel steps through: relative, absolute, row locked, column locked.
+  const [nextCol, nextRow] =
+    !col && !row ? [true, true] : col && row ? [false, true] : !col ? [true, false] : [false, false];
+  const restyle = (ref: string) => {
+    const match = /^\$?([A-Za-z]+)\$?(\d+)$/.exec(ref) as RegExpExecArray;
+    return `${nextCol ? "$" : ""}${match[1]}${nextRow ? "$" : ""}${match[2]}`;
+  };
+  let out = text;
+  let shift = 0;
+  // Rewrite from the right, so earlier positions stay valid.
+  for (const unit of [...chosen].reverse()) {
+    for (const part of [...unit.parts].reverse()) {
+      const at = part.start + 1;
+      const replacement = restyle(part.text);
+      out = out.slice(0, at) + replacement + out.slice(at + part.text.length);
+      shift += replacement.length - part.text.length;
+    }
+  }
+  // The selection runs from the first reference changed to the end of the last.
+  return { text: out, start: chosen[0].start, end: chosen[chosen.length - 1].end + shift };
+}
+
 /** Writes for dragging the fill handle from `source` out to `target` (which contains it). */
 export function fillWrites(inputs: Inputs, source: Range, target: Range): Inputs {
   const writes: Inputs = {};

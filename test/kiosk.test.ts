@@ -85,4 +85,14 @@ describe("a kiosk's narrated demo", () => {
     // A kiosk is never clicked: asking for one stalls it on the first line for good.
     expect(shadow.querySelector(".xd-narration-play")).toBeNull();
   });
+
+  it("follows the narration without scrolling the host page", async () => {
+    // scrollIntoView scrolls every ancestor, the page included: it dragged a host page down to a
+    // transcript below the fold.
+    const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+    activated = true;
+    const shadow = await kiosk();
+    expect(shadow.querySelector(".xd-narration p.is-on")).not.toBeNull();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
 });

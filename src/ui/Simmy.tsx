@@ -7,6 +7,7 @@ import { runAutopilot, type WorkbookApi } from "./autopilot.ts";
 import { CursorMark } from "./CursorMark.tsx";
 import { useSim } from "./context.ts";
 import { Playback, elapsedAt, planSeek, playhead, skipTrack, sumDurations, type Hold } from "./playback.ts";
+import { revealInBox } from "./reveal.ts";
 import type { Platform } from "./Ribbon.tsx";
 import { TransportBar } from "./TransportBar.tsx";
 import { ExcelGlyph, Workbook } from "./Workbook.tsx";
@@ -424,7 +425,9 @@ export function Simmy({
   // Each pass of the autopilot ends by resetting the workbook, which starts the next pass.
   const laidOut = phone ? open : wins !== null;
   useEffect(() => {
-    activeLineRef.current?.scrollIntoView({ block: "nearest" });
+    if (activeLineRef.current) {
+      revealInBox(activeLineRef.current);
+    }
   }, [line]);
   useEffect(() => {
     if (!session) {

@@ -1,6 +1,7 @@
 import { useRef, useState } from "preact/hooks";
 import { addrName, type Inputs, parseRange, rangeAddrs } from "../engine/sheet.ts";
-import { doItWrites, type GradeReport, gradeAssignment, type TaskGrade, undoItWrites } from "../module/grade.ts";
+import type { Change, WorkbookState } from "../engine/workbook.ts";
+import { doIt, type GradeReport, gradeAssignment, type TaskGrade, undoIt } from "../module/grade.ts";
 import type { SimTask, UnsupportedTool } from "../module/types.ts";
 import { useSim } from "./context.ts";
 import { type DemoIconName, ICONS } from "./icons.ts";
@@ -22,9 +23,11 @@ export function FaIcon({ name, class: className = "" }: { name: DemoIconName; cl
 const CELL_REF = /(\b[A-Z]{1,2}\$?\d{1,3}(?::[A-Z]{1,2}\$?\d{1,3})?\b)/;
 
 export type TaskPaneProps = {
-  inputs: Inputs;
+  /** The workbook, for the completeness check and grading. */
+  state: WorkbookState;
   onSelect: (ref: string) => void;
-  onWrite: (writes: Inputs) => void;
+  /** Changes the workbook: Do it and Undo it. */
+  onChange: (change: Change) => void;
   onClose: () => void;
   /** Tools the demo can't do (video, textbook) report here instead of changing the pane. */
   onUnsupported: (kind: UnsupportedTool, task: SimTask) => void;
@@ -35,7 +38,8 @@ type View = "tasks" | "submit" | "results";
 type Phase = { kind: "working" } | { kind: "grading"; step: number; rule: number } | { kind: "graded" };
 
 /** The Excel Educator task pane: the add-in's task guide, with local grading. */
-export function TaskPane({ inputs, onSelect, onWrite, onClose, onUnsupported }: TaskPaneProps) {
+export function TaskPane({ state, onSelect, onChange, onClose, onUnsupported }: TaskPaneProps) {
+  const { inputs } = state;
   const { module: mod, onGraded } = useSim();
   const tasks = mod.tasks;
   const submitSteps = mod.copy.submitSteps;
@@ -70,7 +74,7 @@ export function TaskPane({ inputs, onSelect, onWrite, onClose, onUnsupported }: 
     onSelect(task.range);
     window.setTimeout(() => {
       const undoing = doneIt[task.id];
-      onWrite(undoing ? undoItWrites(task) : doItWrites(task));
+      onChange(undoing ? undoIt(task) : doIt(task));
       setDoneIt((prev) => ({ ...prev, [task.id]: !undoing }));
       setBusy(null);
     }, 450);
@@ -80,7 +84,7 @@ export function TaskPane({ inputs, onSelect, onWrite, onClose, onUnsupported }: 
     if (phase.kind === "grading") {
       return;
     }
-    const result = gradeAssignment(mod, inputs);
+    const result = gradeAssignment(mod, state);
     let step = 0;
     let rule = 0;
     setPhase({ kind: "grading", step, rule });

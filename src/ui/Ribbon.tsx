@@ -56,6 +56,8 @@ export type RibbonProps = {
   onPaste: () => void;
   onClear: () => void;
   onFillDown: () => void;
+  /** Calculate Now and Calculate Sheet: recalculate, so RANDBETWEEN picks new numbers. */
+  onCalculateNow: () => void;
 };
 
 /** The tab row. `tab` is null while the ribbon is collapsed, so no tab shows as selected. */
@@ -469,6 +471,20 @@ function FormulaGroups(props: RibbonProps) {
       </Group>
       <Group label="Calculation" collapsible>
         <BigButton label="Calculation Options" dropdown icon={book("=", "#217346")} />
+        <div class="xd-stack">
+          <SmallButton title="Calculate Now (F9)" label="Calculate Now" onClick={props.onCalculateNow}>
+            <Svg>
+              <rect x="4" y="3" width="12" height="14" rx="1" fill="#fff" stroke="#616161" />
+              <path d="M7 7h6M7 10h6M7 13h3" stroke="#217346" />
+            </Svg>
+          </SmallButton>
+          <SmallButton title="Calculate Sheet (Shift+F9)" label="Calculate Sheet" onClick={props.onCalculateNow}>
+            <Svg>
+              <rect x="3" y="4" width="14" height="12" fill="#fff" stroke="#616161" />
+              <path d="M3 8h14M8 4v12" stroke="#217346" />
+            </Svg>
+          </SmallButton>
+        </div>
       </Group>
     </>
   );

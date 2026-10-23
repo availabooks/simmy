@@ -1636,8 +1636,8 @@ export function evaluateExpression(inputs: Inputs, formula: string, opts: EvalOp
 }
 
 /** What a formula would show in a cell: an array's top-left value. */
-export function evaluateFormulaAt(inputs: Inputs, formula: string, _at?: Addr): Value {
-  const result = evaluateExpression(inputs, formula);
+export function evaluateFormulaAt(inputs: Inputs, formula: string, _at?: Addr, opts: EvalOptions = {}): Value {
+  const result = evaluateExpression(inputs, formula, opts);
   return isMatrix(result) ? result[0][0] : result;
 }
 

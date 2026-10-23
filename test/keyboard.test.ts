@@ -64,7 +64,14 @@ async function sheet() {
     nameBox.value = addr;
     nameBox.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
   };
-  return { press, type, goTo, editor, active: () => nameBox.value };
+  /** What a cell shows, read from the grid. */
+  const cellText = (addr: string) => {
+    const col = addr.charCodeAt(0) - 65;
+    const row = Number(addr.slice(1)) - 1;
+    const line = shadow.querySelectorAll(".xd-row-line")[row];
+    return line?.querySelectorAll(".xd-cell")[col]?.textContent ?? "";
+  };
+  return { press, type, goTo, editor, cellText, active: () => nameBox.value };
 }
 
 describe("keyboard movement", () => {
@@ -202,5 +209,22 @@ describe("F4 while typing a formula", () => {
     s.goTo("H8");
     s.press("F2");
     expect(s.editor()?.value).toBe("=$C$2");
+  });
+});
+
+describe("Calculate Now (F9)", () => {
+  it("picks new RANDBETWEEN numbers, and only when asked", async () => {
+    const s = await sheet();
+    s.goTo("H8");
+    // Up to seven digits, which the column is wide enough to show.
+    s.type("=RANDBETWEEN(1,1000000)");
+    s.press("Enter");
+    const cell = () => s.cellText("H8");
+    const first = cell();
+    expect(Number(first)).toBeGreaterThan(0);
+    s.goTo("H8");
+    expect(cell()).toBe(first);
+    s.press("F9");
+    expect(cell()).not.toBe(first);
   });
 });

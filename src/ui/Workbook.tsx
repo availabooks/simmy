@@ -28,7 +28,8 @@ import {
   suggestFunctions,
   type Value,
 } from "../engine/sheet.ts";
-import { initialInputs } from "../module/grade.ts";
+import { applyChange, type Change, nextSeed, type WorkbookState } from "../engine/workbook.ts";
+import { initialState } from "../module/grade.ts";
 import type { CellStyle, SimModule } from "../module/types.ts";
 import type { WorkbookApi } from "./autopilot.ts";
 import { useSim } from "./context.ts";
@@ -47,7 +48,8 @@ const SIGNATURES: Record<string, string> = Object.fromEntries(FUNCTIONS.map((fn)
 type Selection = { anchor: Addr; focus: Addr };
 type Point = { start: number; end: number; anchor: Addr; focus: Addr };
 type Edit = { addr: Addr; text: string; mode: "enter" | "edit"; origin: "cell" | "bar"; point: Point | null };
-type Book = { inputs: Inputs; past: Inputs[]; future: Inputs[] };
+/** The workbook, with the states Undo and Redo go back and forth through. */
+type Book = { state: WorkbookState; past: WorkbookState[]; future: WorkbookState[] };
 type Drag = { kind: "select" } | { kind: "point" } | { kind: "fill"; source: Range } | null;
 
 /** The module's sheet in the shapes the grid draws from. */
@@ -64,18 +66,6 @@ function sheetLayout(mod: SimModule) {
     outlines: mod.sheet.outlines,
     startAddr: parseAddr(mod.sheet.start) ?? { col: 0, row: 0 },
   };
-}
-
-function applyWrites(inputs: Inputs, writes: Inputs): Inputs {
-  const next = { ...inputs };
-  for (const [key, raw] of Object.entries(writes)) {
-    if (raw === "") {
-      delete next[key];
-    } else {
-      next[key] = raw;
-    }
-  }
-  return next;
 }
 
 function formatName(style: CellStyle | undefined): string {
@@ -154,7 +144,8 @@ export function Workbook(props: WorkbookProps) {
     col: Math.max(0, Math.min(cols - 1, col)),
     row: Math.max(0, Math.min(rowCount - 1, row)),
   });
-  const [book, setBook] = useState<Book>(() => ({ inputs: initialInputs(mod), past: [], future: [] }));
+  const [book, setBook] = useState<Book>(() => ({ state: initialState(mod), past: [], future: [] }));
+  const { inputs, names } = book.state;
   const [sel, setSel] = useState<Selection>({ anchor: startAddr, focus: startAddr });
   const [edit, setEdit] = useState<Edit | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
@@ -181,8 +172,8 @@ export function Workbook(props: WorkbookProps) {
   editRef.current = edit;
 
   const sheetEval = useMemo(
-    () => evaluateBook(book.inputs, { bounds: { rows: rowCount, cols } }),
-    [book.inputs, rowCount, cols],
+    () => evaluateBook(inputs, { bounds: { rows: rowCount, cols }, names, seed: book.state.seed }),
+    [book.state, rowCount, cols],
   );
   const { values } = sheetEval;
   const selRange = normalizeRange(sel.anchor, sel.focus);
@@ -197,7 +188,7 @@ export function Workbook(props: WorkbookProps) {
     if (props.resetKey === 0) {
       return;
     }
-    setBook({ inputs: initialInputs(mod), past: [], future: [] });
+    setBook({ state: initialState(mod), past: [], future: [] });
     setSel({ anchor: startAddr, focus: startAddr });
     setEdit(null);
     setClip(null);
@@ -207,25 +198,27 @@ export function Workbook(props: WorkbookProps) {
     scrollRef.current?.scrollTo({ left: 0, top: 0 });
   }, [props.resetKey]);
 
-  const write = useCallback((writes: Inputs) => {
+  /** Every change to the workbook comes through here, as one step for Undo. */
+  const apply = useCallback((change: Change) => {
     setBook((b) => ({
-      inputs: applyWrites(b.inputs, writes),
-      past: [...b.past.slice(-99), b.inputs],
+      state: applyChange(b.state, change),
+      past: [...b.past.slice(-99), b.state],
       future: [],
     }));
   }, []);
+  const write = useCallback((writes: Inputs) => apply({ cells: writes }), [apply]);
+  /** Calculate Now: RANDBETWEEN picks new numbers. As in Excel, it isn't a step to undo. */
+  const recalculate = () => setBook((b) => ({ ...b, state: { ...b.state, seed: nextSeed(b.state.seed) } }));
 
   const undo = () =>
     setBook((b) =>
       b.past.length === 0
         ? b
-        : { inputs: b.past[b.past.length - 1], past: b.past.slice(0, -1), future: [b.inputs, ...b.future] },
+        : { state: b.past[b.past.length - 1], past: b.past.slice(0, -1), future: [b.state, ...b.future] },
     );
   const redo = () =>
     setBook((b) =>
-      b.future.length === 0
-        ? b
-        : { inputs: b.future[0], past: [...b.past, b.inputs], future: b.future.slice(1) },
+      b.future.length === 0 ? b : { state: b.future[0], past: [...b.past, b.state], future: b.future.slice(1) },
     );
 
   /* ---------------------------------------------------------- scrolling */
@@ -304,7 +297,7 @@ export function Workbook(props: WorkbookProps) {
     if (!current) {
       return true;
     }
-    const text = normalizeFormula(current.text);
+    const text = normalizeFormula(current.text, names);
     if (text.startsWith("=")) {
       try {
         checkFormula(text);
@@ -314,7 +307,7 @@ export function Workbook(props: WorkbookProps) {
       }
     }
     const key = addrName(current.addr);
-    if ((book.inputs[key] ?? "") !== text) {
+    if ((inputs[key] ?? "") !== text) {
       write({ [key]: text });
     }
     setEdit(null);
@@ -473,7 +466,7 @@ export function Workbook(props: WorkbookProps) {
       if (!from || !to) {
         return;
       }
-      write(fillWrites(book.inputs, from, to));
+      write(fillWrites(inputs, from, to));
       setSel({ anchor: { col: to.c1, row: to.r1 }, focus: { col: to.c2, row: to.r2 } });
       setFillTarget(null);
     },
@@ -654,7 +647,7 @@ export function Workbook(props: WorkbookProps) {
     pointer.current = null;
     setSelecting(false);
     if (mode?.kind === "fill" && fillTarget) {
-      const writes = fillWrites(book.inputs, mode.source, fillTarget);
+      const writes = fillWrites(inputs, mode.source, fillTarget);
       if (Object.keys(writes).length > 0) {
         write(writes);
       }
@@ -668,7 +661,7 @@ export function Workbook(props: WorkbookProps) {
 
   /* ----------------------------------------------------------- keyboard */
 
-  const copy = (cut = false) => setClip(copyRange(book.inputs, selRange, cut));
+  const copy = (cut = false) => setClip(copyRange(inputs, selRange, cut));
   const paste = () => {
     if (!clip) {
       return;
@@ -687,7 +680,7 @@ export function Workbook(props: WorkbookProps) {
   const clear = () => {
     const writes: Inputs = {};
     for (const addr of rangeAddrs(selRange)) {
-      if (book.inputs[addrName(addr)] !== undefined) {
+      if (inputs[addrName(addr)] !== undefined) {
         writes[addrName(addr)] = "";
       }
     }
@@ -697,7 +690,7 @@ export function Workbook(props: WorkbookProps) {
   };
   const fill = (direction: "down" | "right") => {
     const source = direction === "down" ? { ...selRange, r2: selRange.r1 } : { ...selRange, c2: selRange.c1 };
-    write(fillWrites(book.inputs, source, selRange));
+    write(fillWrites(inputs, source, selRange));
   };
 
   const onGridKeyDown = (event: TargetedKeyboardEvent<HTMLDivElement>) => {
@@ -781,7 +774,12 @@ export function Workbook(props: WorkbookProps) {
         return;
       case "F2":
         handled();
-        startEdit(book.inputs[addrName(active)] ?? "", "edit");
+        startEdit(inputs[addrName(active)] ?? "", "edit");
+        return;
+      case "F9":
+        // F9, Shift+F9 and Ctrl+Alt+F9 all recalculate; with one sheet they do the same.
+        handled();
+        recalculate();
         return;
       case "Escape":
         setClip(null);
@@ -904,11 +902,11 @@ export function Workbook(props: WorkbookProps) {
 
   /* ------------------------------------------------------------- render */
 
-  const refRanges = edit ? formulaRanges(edit.text) : [];
+  const refRanges = edit ? formulaRanges(edit.text, names) : [];
   const activeKey = addrName(active);
   // A cell filled by a spill shows its anchor's formula, greyed, as Excel does.
   const spillAnchor = sheetEval.owner[activeKey];
-  const barText = edit ? edit.text : (book.inputs[activeKey] ?? (spillAnchor ? book.inputs[spillAnchor] : ""));
+  const barText = edit ? edit.text : (inputs[activeKey] ?? (spillAnchor ? inputs[spillAnchor] : ""));
   const ghost = !edit && spillAnchor !== undefined;
   // The active cell's spill: its range while it fills, or where it would go while blocked.
   const spillRange = sheetEval.spills[spillAnchor ?? activeKey];
@@ -1093,6 +1091,7 @@ export function Workbook(props: WorkbookProps) {
             onPaste={command(paste)}
             onClear={command(clear)}
             onFillDown={command(() => fill("down"))}
+            onCalculateNow={command(recalculate)}
           />
         )}
       </div>
@@ -1169,7 +1168,7 @@ export function Workbook(props: WorkbookProps) {
           autocomplete="off"
           onFocus={() => {
             if (!editRef.current) {
-              startEdit(book.inputs[activeKey] ?? "", "edit", "bar");
+              startEdit(inputs[activeKey] ?? "", "edit", "bar");
             } else if (editRef.current.origin !== "bar") {
               setEdit({ ...editRef.current, origin: "bar", mode: "edit" });
             }
@@ -1200,7 +1199,7 @@ export function Workbook(props: WorkbookProps) {
                 return;
               }
               if (!editRef.current) {
-                startEdit(book.inputs[activeKey] ?? "", "edit");
+                startEdit(inputs[activeKey] ?? "", "edit");
               }
             }}
             onKeyDown={onGridKeyDown}
@@ -1317,9 +1316,9 @@ export function Workbook(props: WorkbookProps) {
         {paneOpen && (
           <TaskPane
             key={paneKey}
-            inputs={book.inputs}
+            state={book.state}
             onSelect={selectFromPane}
-            onWrite={write}
+            onChange={apply}
             onClose={() => setPaneOpen(false)}
             onUnsupported={props.onUnsupported}
           />

@@ -6,7 +6,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { parse } from "yaml";
-import { gradeAssignment, solvedInputs } from "../module/grade.ts";
+import { gradeAssignment, solvedState } from "../module/grade.ts";
 import { relativeAudioRefs } from "../module/host.ts";
 import { unknownKeys } from "../module/keys.ts";
 import { ModuleError, parseModule } from "../module/parse.ts";
@@ -42,7 +42,7 @@ export function validateModuleFile(configPath: string): ModuleReport {
   try {
     const mod = parseModule(data);
     // Do it writes each solution, and a module whose own answer loses points can't be passed.
-    gradeAssignment(mod, solvedInputs(mod)).tasks.forEach((task, i) => {
+    gradeAssignment(mod, solvedState(mod)).tasks.forEach((task, i) => {
       for (const { points, message } of task.deductions) {
         report.problems.push(`tasks[${i}].solution: Do it loses ${points} point${points === 1 ? "" : "s"} (${message})`);
       }

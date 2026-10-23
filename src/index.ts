@@ -5,16 +5,22 @@
 import { defineSimmy } from "./element.ts";
 
 export { defineSimmy, SimmyElement } from "./element.ts";
+export * from "./engine/names.ts";
 export * from "./engine/sheet.ts";
+export * from "./engine/workbook.ts";
 export {
   type Deduction,
+  doIt,
   doItWrites,
   type GradeReport,
   gradeAssignment,
   gradeTask,
   initialInputs,
+  initialState,
   solvedInputs,
+  solvedState,
   type TaskGrade,
+  undoIt,
   undoItWrites,
 } from "./module/grade.ts";
 export { DEFAULT_COPY, defaultAutopilot, loadModule, ModuleError, parseModule } from "./module/parse.ts";

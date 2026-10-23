@@ -6,6 +6,7 @@ import {
   addrName,
   evaluateFormulaAt,
   evaluateSheet,
+  type EvalOptions,
   formulaReferences,
   inRange,
   type Inputs,
@@ -18,11 +19,27 @@ import {
   shiftFormula,
   type Value,
 } from "../engine/sheet.ts";
+import { applyChange, type Change, toState, type WorkbookState } from "../engine/workbook.ts";
 import type { RubricRule, SimModule, SimTask } from "./types.ts";
 
-/** The workbook as the module builds it, before the student types anything. */
+/** The cells as the module builds them, before the student types anything. */
 export function initialInputs(mod: SimModule): Inputs {
   return { ...mod.sheet.cells };
+}
+
+/** The workbook as the module builds it, before the student does anything. */
+export function initialState(mod: SimModule): WorkbookState {
+  return { inputs: initialInputs(mod), names: {}, seed: 1 };
+}
+
+/** Do it as a change to the workbook. */
+export function doIt(task: SimTask): Change {
+  return { cells: doItWrites(task) };
+}
+
+/** Undo it as a change to the workbook. */
+export function undoIt(task: SimTask): Change {
+  return { cells: undoItWrites(task) };
 }
 
 /** Cell writes for Do it: the solution in every cell of the task range, shifted like a fill. */
@@ -70,16 +87,19 @@ function sameValue(actual: Value, expected: Value): boolean {
   return false;
 }
 
-function passes(rule: RubricRule, inputs: Inputs, values: Record<string, Value>): boolean {
+function passes(rule: RubricRule, book: WorkbookState, values: Record<string, Value>): boolean {
+  const { inputs, names } = book;
   switch (rule.kind) {
-    case "value":
-      return sameValue(values[rule.cell] ?? null, evaluateFormulaAt(inputs, rule.formula, SCRATCH));
+    case "value": {
+      const expected = evaluateFormulaAt(inputs, rule.formula, SCRATCH, options(book));
+      return sameValue(values[rule.cell] ?? null, expected);
+    }
     case "reference": {
       const raw = inputs[rule.cell];
       if (!isFormula(raw)) {
         return false;
       }
-      const refs = formulaReferences(raw);
+      const refs = formulaReferences(raw, names);
       if (rule.forms) {
         const forms = rule.forms;
         return refs.some((ref) => forms.includes(ref.text));
@@ -93,12 +113,12 @@ function passes(rule: RubricRule, inputs: Inputs, values: Record<string, Value>)
       if (!isFormula(first)) {
         return false;
       }
-      const base = normalizeFormula(first);
+      const base = normalizeFormula(first, names);
       return rangeAddrs(range).every((addr) => {
         const raw = inputs[addrName(addr)];
         return (
           isFormula(raw) &&
-          normalizeFormula(raw) === shiftFormula(base, addr.col - range.c1, addr.row - range.r1)
+          normalizeFormula(raw, names) === shiftFormula(base, addr.col - range.c1, addr.row - range.r1)
         );
       });
     }
@@ -109,17 +129,27 @@ function passes(rule: RubricRule, inputs: Inputs, values: Record<string, Value>)
   }
 }
 
-export function gradeTask(task: SimTask, inputs: Inputs, values = evaluateSheet(inputs)): TaskGrade {
+/** How the grader evaluates a workbook: with its names, and the numbers its seed picks. */
+function options(book: WorkbookState): EvalOptions {
+  return { names: book.names, seed: book.seed };
+}
+
+/** Grade one task. `book` is the workbook, or just its cells. */
+export function gradeTask(task: SimTask, book: WorkbookState | Inputs, values?: Record<string, Value>): TaskGrade {
+  const state = toState(book);
+  const cells = values ?? evaluateSheet(state.inputs, options(state));
   const deductions = task.rules
-    .filter((rule) => !passes(rule, inputs, values))
+    .filter((rule) => !passes(rule, state, cells))
     .map((rule) => ({ points: rule.points, message: rule.message }));
   const lost = deductions.reduce((sum, d) => sum + d.points, 0);
   return { taskId: task.id, points: task.points, earned: Math.max(0, task.points - lost), deductions };
 }
 
-export function gradeAssignment(mod: SimModule, inputs: Inputs): GradeReport {
-  const values = evaluateSheet(inputs);
-  const tasks = mod.tasks.map((task) => gradeTask(task, inputs, values));
+/** Grade every task. `book` is the workbook, or just its cells. */
+export function gradeAssignment(mod: SimModule, book: WorkbookState | Inputs): GradeReport {
+  const state = toState(book);
+  const values = evaluateSheet(state.inputs, options(state));
+  const tasks = mod.tasks.map((task) => gradeTask(task, state, values));
   return {
     tasks,
     earned: tasks.reduce((sum, grade) => sum + grade.earned, 0),
@@ -127,7 +157,12 @@ export function gradeAssignment(mod: SimModule, inputs: Inputs): GradeReport {
   };
 }
 
-/** Every task done with Do it: the sheet a perfect student hands in. */
+/** Every task done with Do it: the cells a perfect student hands in. */
 export function solvedInputs(mod: SimModule): Inputs {
-  return mod.tasks.reduce<Inputs>((inputs, task) => ({ ...inputs, ...doItWrites(task) }), initialInputs(mod));
+  return solvedState(mod).inputs;
+}
+
+/** Every task done with Do it: the workbook a perfect student hands in. */
+export function solvedState(mod: SimModule): WorkbookState {
+  return mod.tasks.reduce((state, task) => applyChange(state, doIt(task)), initialState(mod));
 }

@@ -32,7 +32,7 @@ installed, so keep the two consistent:
   site as `/skill/simmy.zip`. Keep `module-format.md` in step with `parse.ts`; `test/skill.test.ts`
   checks its example and that it names every key.
 - `docs/`: the documentation site, plain static files (`npm run docs` serves it). Its live demo
-  uses the published build from jsDelivr and the hosted module, so it shows what users get.
+  uses the latest published build from jsDelivr and the hosted module, so it shows what users get.
 
 ## Commands
 
@@ -58,9 +58,10 @@ coverage is thin, so check UI changes in the browser with `npm run dev`.
 
 ## Releasing
 
-Bump `version` in `package.json`, update the version in the jsDelivr URLs in the README, in
-`docs/index.html` (with the badge beside the docs logo; `test/docs.test.ts` checks) and in
-`skill/simmy/SKILL.md` (`test/skill.test.ts` checks), commit, then
-`git tag vX.Y.Z && git push --tags`. The Publish workflow checks that the tag matches
-`package.json`, then publishes to npm through trusted publishing (no token). jsDelivr serves it
-a few minutes later. Don't tag a version that is already on npm.
+Bump `version` in `package.json`, update the version in the jsDelivr URLs in the README and in
+`skill/simmy/SKILL.md` (`test/skill.test.ts` checks), and the badge beside the docs logo in
+`docs/index.html` (`test/docs.test.ts` checks; the site itself always loads `@latest`). Commit,
+then `git tag vX.Y.Z && git push --tags`. The Publish workflow checks that the tag matches
+`package.json`, then publishes to npm through trusted publishing (no token). Don't tag a version
+that is already on npm. Once npm has it, run `npm run publish-modules`: it deploys the docs site
+and modules, and purges jsDelivr's cached `@latest` so the site shows the new release.

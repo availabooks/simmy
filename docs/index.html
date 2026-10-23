@@ -19,8 +19,8 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
     />
     <link rel="stylesheet" href="./docs.css" />
-    <!-- The published build. Keep this version equal to package.json (test/docs.test.ts checks). -->
-    <script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.3.1/dist/simmy.js"></script>
+    <!-- The latest published build, so the site always shows the current release (test/docs.test.ts checks). -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@latest/dist/simmy.js"></script>
     <script type="module" src="./docs.js"></script>
   </head>
   <body>
@@ -148,7 +148,7 @@
               One self-contained file, with Preact, the styles and the YAML parser inside. Point
               <code>src</code> at a module.
             </p>
-            <pre><code>&lt;script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@0.3.1/dist/simmy.js"&gt;&lt;/script&gt;
+            <pre><code>&lt;script type="module" src="https://cdn.jsdelivr.net/npm/@availabooks/simmy@latest/dist/simmy.js"&gt;&lt;/script&gt;
 
 &lt;simmy-app src="https://simmy-modules.cotc.workers.dev/references-and-calculations/config.yaml"&gt;&lt;/simmy-app&gt;</code></pre>
 
@@ -619,8 +619,9 @@ npm run check
 npm run build   # dist/index.js (npm), dist/simmy.js (standalone), dist/embed.html</code></pre>
             <p>
               To release, bump <code>version</code> in <code>package.json</code>, update the jsDelivr URLs in the
-              README and in <code>docs/index.html</code>, commit, then push a <code>v*</code> tag. The Publish
-              workflow publishes to npm, and jsDelivr serves it a few minutes later.
+              README and the version badge in <code>docs/index.html</code>, commit, then push a <code>v*</code> tag.
+              The Publish workflow publishes to npm, and jsDelivr serves it a few minutes later. This site loads
+              <code>@latest</code>; <code>npm run publish-modules</code> deploys it and refreshes jsDelivr's copy.
             </p>
           </section>
         </article>

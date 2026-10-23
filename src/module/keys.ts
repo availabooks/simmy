@@ -18,7 +18,7 @@ export const RULE_KEYS: Record<string, string[]> = {
 
 export const MODULE: Shape = {
   version: true,
-  workbook: { name: true, sheet: true },
+  workbook: { name: true, sheet: true, names: "any-keys" },
   assignment: { title: true, text: true, section: true },
   sheet: {
     rows: true,
@@ -32,7 +32,20 @@ export const MODULE: Shape = {
     start: true,
   },
   // Rules are checked by kind, below.
-  tasks: [{ id: true, name: true, text: true, details: true, hint: true, points: true, range: true, solution: true, rules: true }],
+  tasks: [
+    {
+      id: true,
+      name: true,
+      text: true,
+      details: true,
+      hint: true,
+      points: true,
+      range: true,
+      solution: true,
+      names: "any-keys",
+      rules: true,
+    },
+  ],
   note: { title: true, steps: true },
   autopilot: [
     { task: true, at: true, type: true, fill: true, doit: true, undo: true, done: true, submit: true, audio: true, transcript: true },

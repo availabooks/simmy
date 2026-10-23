@@ -1,5 +1,6 @@
 import { useRef, useState } from "preact/hooks";
 import { addrName, type Inputs, parseRange, rangeAddrs } from "../engine/sheet.ts";
+import { lookupName } from "../engine/names.ts";
 import type { Change, WorkbookState } from "../engine/workbook.ts";
 import { doIt, type GradeReport, gradeAssignment, type TaskGrade, undoIt } from "../module/grade.ts";
 import type { SimTask, UnsupportedTool } from "../module/types.ts";
@@ -71,7 +72,7 @@ export function TaskPane({ state, onSelect, onChange, onClose, onUnsupported }: 
       return;
     }
     setBusy(task.id);
-    onSelect(task.range);
+    onSelect(task.range ?? Object.values(task.names)[0] ?? task.hint);
     window.setTimeout(() => {
       const undoing = doneIt[task.id];
       onChange(undoing ? undoIt(task) : doIt(task));
@@ -109,11 +110,14 @@ export function TaskPane({ state, onSelect, onChange, onClose, onUnsupported }: 
     window.setTimeout(tick, 380);
   };
 
-  // The add-in's precheck: any answer cell still empty counts as an incomplete task.
-  const incomplete = tasks.some((task) =>
-    rangeAddrs(parseRange(task.range) ?? { c1: 0, r1: 0, c2: 0, r2: 0 }).some(
-      (addr) => !inputs[addrName(addr)],
-    ),
+  // The add-in's precheck: any answer cell still empty, or name not yet defined, counts as an
+  // incomplete task.
+  const emptyCell = (range: string) =>
+    rangeAddrs(parseRange(range) ?? { c1: 0, r1: 0, c2: 0, r2: 0 }).some((addr) => !inputs[addrName(addr)]);
+  const incomplete = tasks.some(
+    (task) =>
+      (task.range !== undefined && emptyCell(task.range)) ||
+      Object.keys(task.names).some((name) => lookupName(state.names, name) === null),
   );
 
   const grades = new Map(report?.tasks.map((g) => [g.taskId, g]));

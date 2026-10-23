@@ -29,23 +29,29 @@ export function initialInputs(mod: SimModule): Inputs {
 
 /** The workbook as the module builds it, before the student does anything. */
 export function initialState(mod: SimModule): WorkbookState {
-  return { inputs: initialInputs(mod), names: {}, seed: 1 };
+  return { inputs: initialInputs(mod), names: { ...mod.workbook.names }, seed: 1 };
 }
 
-/** Do it as a change to the workbook. */
+/** Do it as a change to the workbook: the solution written across the range, and the task's names. */
 export function doIt(task: SimTask): Change {
-  return { cells: doItWrites(task) };
+  return { cells: doItWrites(task), names: task.names };
 }
 
-/** Undo it as a change to the workbook. */
+/** Undo it as a change to the workbook: the range cleared, and the task's names deleted. */
 export function undoIt(task: SimTask): Change {
-  return { cells: undoItWrites(task) };
+  return {
+    cells: undoItWrites(task),
+    names: Object.fromEntries(Object.keys(task.names).map((name) => [name, null])),
+  };
 }
 
 /** Cell writes for Do it: the solution in every cell of the task range, shifted like a fill. */
 export function doItWrites(task: SimTask): Inputs {
-  const range = parseRange(task.range) as Range;
+  const range = task.range ? parseRange(task.range) : null;
   const writes: Inputs = {};
+  if (!range || !task.solution) {
+    return writes;
+  }
   for (const addr of rangeAddrs(range)) {
     writes[addrName(addr)] = shiftFormula(task.solution, addr.col - range.c1, addr.row - range.r1);
   }
@@ -54,8 +60,11 @@ export function doItWrites(task: SimTask): Inputs {
 
 /** Cell writes for Undo it: clear the task range. */
 export function undoItWrites(task: SimTask): Inputs {
-  const range = parseRange(task.range) as Range;
+  const range = task.range ? parseRange(task.range) : null;
   const writes: Inputs = {};
+  if (!range) {
+    return writes;
+  }
   for (const addr of rangeAddrs(range)) {
     writes[addrName(addr)] = "";
   }

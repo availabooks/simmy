@@ -41,6 +41,7 @@ describe("grading a workbook", () => {
     points: 2,
     range: "B2",
     solution: "=A2*Rate",
+    names: {},
     rules: [
       { kind: "value", cell: "B2", formula: "=A2*G2", points: 1, message: "value" },
       { kind: "reference", cell: "B2", ref: "G2", forms: ["$G$2"], points: 1, message: "reference" },
@@ -56,5 +57,23 @@ describe("grading a workbook", () => {
   it("treats plain cells as a workbook without names", () => {
     expect(toState(inputs)).toEqual({ inputs, names: {}, seed: 1 });
     expect(gradeTask(task, inputs).earned).toBe(0);
+  });
+});
+
+describe("Do it and Undo it with names", () => {
+  it("defines the task's names and deletes them again", async () => {
+    const { parseModule } = await import("../src/module/parse.ts");
+    const { doIt, initialState, undoIt } = await import("../src/module/grade.ts");
+    const mod = parseModule({
+      workbook: { name: "Book1", names: { Given: "A1" } },
+      assignment: { title: "Names", text: "Name things." },
+      sheet: { cells: { A1: 2, A2: 3 } },
+      tasks: [{ text: "Name A2 Rate.", names: { Rate: "A2" }, rules: [] }],
+    });
+    const start = initialState(mod);
+    expect(start.names).toEqual({ Given: "$A$1" });
+    const done = applyChange(start, doIt(mod.tasks[0]));
+    expect(done.names).toEqual({ Given: "$A$1", Rate: "$A$2" });
+    expect(applyChange(done, undoIt(mod.tasks[0])).names).toEqual({ Given: "$A$1" });
   });
 });

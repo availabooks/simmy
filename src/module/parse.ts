@@ -3,12 +3,16 @@
  * `SimModule`. Every problem is collected and reported together, with the path
  * to the offending field, so an author can fix a file in one pass.
  */
+import { absoluteRef, formulaNames, nameProblem, nameRange } from "../engine/names.ts";
 import {
   addrName,
   checkFormula,
   colIndex,
   colName,
+  FUNCTIONS,
+  formulaFunctions,
   type Inputs,
+  type Names,
   normalizeRange,
   type NumberFormat,
   parseAddr,
@@ -115,12 +119,15 @@ export function parseModule(data: unknown): SimModule {
   };
   const strings = (value: unknown, path: string): string[] =>
     list(value, path).map((item, i) => str(item, `${path}[${i}]`));
+  // Every formula, so the names and functions they use can be checked once all names are known.
+  const formulas: { path: string; text: string }[] = [];
   const formula = (value: unknown, path: string): string => {
     const text = str(value, path);
     if (!text.startsWith("=")) {
       fail(path, `"${text}" must start with =`);
       return text;
     }
+    formulas.push({ path, text });
     try {
       checkFormula(text);
     } catch (error) {
@@ -134,10 +141,8 @@ export function parseModule(data: unknown): SimModule {
   }
 
   const workbookRaw = obj(root.workbook, "workbook");
-  const workbook = {
-    name: str(workbookRaw.name, "workbook.name"),
-    sheet: str(workbookRaw.sheet, "workbook.sheet", "Sheet1"),
-  };
+  const workbookName = str(workbookRaw.name, "workbook.name");
+  const workbookSheet = str(workbookRaw.sheet, "workbook.sheet", "Sheet1");
 
   const assignmentRaw = obj(root.assignment, "assignment");
   const assignment = {
@@ -191,6 +196,29 @@ export function parseModule(data: unknown): SimModule {
       .map((part, i) => parseRange(rangeRef(part, Array.isArray(value) ? `${path}[${i}]` : path)))
       .filter((range): range is Range => range !== null);
   };
+  /** Defined names, { Rate: G2, Sales: D2:D9 }: each a valid name for a range on the sheet. */
+  const namesMap = (value: unknown, path: string): Names => {
+    const out: Names = {};
+    for (const [name, ref] of Object.entries(obj(value, path))) {
+      const problem = nameProblem(name);
+      if (problem) {
+        fail(`${path}.${name}`, problem);
+        continue;
+      }
+      const same = Object.keys(out).find((other) => other.toUpperCase() === name.toUpperCase());
+      if (same) {
+        fail(path, `"${same}" and "${name}" are the same name`);
+        continue;
+      }
+      const range = parseRange(rangeRef(ref, `${path}.${name}`));
+      if (range) {
+        out[name] = absoluteRef(range);
+      }
+    }
+    return out;
+  };
+
+  const workbookNames = namesMap(workbookRaw.names, "workbook.names");
 
   const cells: Inputs = {};
   for (const [key, raw] of Object.entries(obj(sheetRaw.cells, "sheet.cells"))) {
@@ -273,7 +301,15 @@ export function parseModule(data: unknown): SimModule {
     const path = `tasks[${i}]`;
     const raw = obj(item, path);
     const id = str(raw.id, `${path}.id`, String.fromCharCode(65 + i));
-    const range = rangeRef(raw.range, `${path}.range`);
+    // Do it writes a solution across a range, defines names, or both.
+    const names = namesMap(raw.names, `${path}.names`);
+    if ((raw.range === undefined) !== (raw.solution === undefined)) {
+      const [missing, given] = raw.range === undefined ? ["range", "solution"] : ["solution", "range"];
+      fail(`${path}.${missing}`, `is needed with ${given}`);
+    } else if (raw.range === undefined && Object.keys(names).length === 0) {
+      fail(path, "needs a range and solution, or names, for Do it");
+    }
+    const range = raw.range === undefined ? undefined : rangeRef(raw.range, `${path}.range`);
     const rules: RubricRule[] = list(raw.rules, `${path}.rules`).map((ruleItem, j) => {
       const rp = `${path}.rules[${j}]`;
       const r = obj(ruleItem, rp);
@@ -294,7 +330,9 @@ export function parseModule(data: unknown): SimModule {
       }
     });
     const rulePoints = rules.reduce((sum, rule) => sum + rule.points, 0);
-    const parsedRange = parseRange(range);
+    // The task opens on its range, or the first name it defines.
+    const firstName = Object.values(names)[0];
+    const parsedRange = range ? parseRange(range) : firstName ? nameRange(firstName) : null;
     const topLeft = parsedRange ? addrName({ col: parsedRange.c1, row: parsedRange.r1 }) : "A1";
     return {
       id,
@@ -304,7 +342,8 @@ export function parseModule(data: unknown): SimModule {
       hint: raw.hint === undefined ? topLeft : cellRef(raw.hint, `${path}.hint`),
       points: num(raw.points, `${path}.points`, rulePoints),
       range,
-      solution: formula(raw.solution, `${path}.solution`),
+      solution: raw.solution === undefined ? undefined : formula(raw.solution, `${path}.solution`),
+      names,
       rules,
     };
   });
@@ -424,11 +463,28 @@ export function parseModule(data: unknown): SimModule {
   const start =
     sheetRaw.start === undefined ? (tasks[0]?.hint ?? "A1") : cellRef(sheetRaw.start, "sheet.start");
 
+  // A name a formula uses must be defined somewhere, and a function must be one simmy has.
+  const defined = [...Object.keys(workbookNames), ...tasks.flatMap((task) => Object.keys(task.names))];
+  const known = new Set(defined.map((name) => name.toUpperCase()));
+  const functions = new Set(FUNCTIONS.map((fn) => fn.name));
+  for (const { path, text } of formulas) {
+    for (const name of formulaNames(text)) {
+      if (!known.has(name.toUpperCase())) {
+        fail(path, `"${text}" uses ${name}, which no name in workbook.names or a task's names defines`);
+      }
+    }
+    for (const fn of formulaFunctions(text)) {
+      if (!functions.has(fn)) {
+        fail(path, `"${text}" uses ${fn}, which this simulator doesn't have`);
+      }
+    }
+  }
+
   if (problems.length > 0) {
     throw new ModuleError(problems);
   }
   return {
-    workbook,
+    workbook: { name: workbookName, sheet: workbookSheet, names: workbookNames },
     assignment,
     sheet: { rows, widths, cells, styles, outlines, start },
     tasks,
@@ -440,9 +496,15 @@ export function parseModule(data: unknown): SimModule {
   };
 }
 
-/** Without a script, the autopilot types each solution where the task starts and fills it across the range. */
+/**
+ * Without a script, the autopilot types each solution where the task starts and fills it
+ * across the range. A task that only defines names uses Do it.
+ */
 export function defaultAutopilot(tasks: SimTask[]): PilotStep[] {
-  return tasks.map((task) => {
+  return tasks.map((task): PilotStep => {
+    if (!task.range || !task.solution) {
+      return { taskId: task.id, kind: "doit" };
+    }
     const range = parseRange(task.range);
     const single = !range || (range.c1 === range.c2 && range.r1 === range.r2);
     const cell = range ? addrName({ col: range.c1, row: range.r1 }) : task.hint;

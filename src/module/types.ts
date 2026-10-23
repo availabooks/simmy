@@ -3,7 +3,7 @@
  * that grades it. Hosts write it as YAML (see hosted-modules/); `parseModule`
  * checks it and resolves it into the `SimModule` the UI reads.
  */
-import type { Inputs, NumberFormat, Range } from "../engine/sheet.ts";
+import type { Inputs, Names, NumberFormat, Range } from "../engine/sheet.ts";
 
 export type CellStyle = {
   fill?: string;
@@ -35,10 +35,12 @@ export type SimTask = {
   /** The cell the add-in selects when the task opens. */
   hint: string;
   points: number;
-  /** Where Do it writes. */
-  range: string;
+  /** Where Do it writes; given with `solution`, or left out for a task that only defines names. */
+  range?: string;
   /** The formula Do it writes into the top-left cell; the rest are shifted copies. */
-  solution: string;
+  solution?: string;
+  /** Names Do it defines (and Undo it deletes), as absolute ranges. */
+  names: Names;
   rules: RubricRule[];
 };
 
@@ -65,7 +67,8 @@ export type SimCopy = {
 };
 
 export type SimModule = {
-  workbook: { name: string; sheet: string };
+  /** `names` are defined from the start, as absolute ranges. */
+  workbook: { name: string; sheet: string; names: Names };
   assignment: { title: string; text: string; section: string };
   sheet: {
     rows: number;

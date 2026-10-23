@@ -32,7 +32,11 @@ const problems = (data: unknown): string[] => {
 describe("parseModule", () => {
   it("reads the shipped module", async () => {
     const mod = await loadModule(moduleText());
-    expect(mod.workbook).toEqual({ name: "References and Calculations", sheet: "Referencing Cells" });
+    expect(mod.workbook).toEqual({
+      name: "References and Calculations",
+      sheet: "Referencing Cells",
+      names: {},
+    });
     expect(mod.sheet.cells.C2).toBe("0.3");
     expect(mod.sheet.widths.slice(0, 6)).toEqual([12, 74, 54, 80, 80, 64]);
     expect(mod.sheet.widths).toHaveLength(20);
@@ -171,5 +175,59 @@ autopilot:
     expect(problems({ ...minimal, autopilot: [{}] })).toContain(
       "autopilot[0]: needs a task, or an audio file and a transcript",
     );
+  });
+});
+
+describe("names in a module", () => {
+  const withNames = (extra: object, task: object = {}) => ({
+    ...minimal,
+    ...extra,
+    tasks: [{ ...minimal.tasks[0], ...task }],
+  });
+
+  it("stores workbook and task names as absolute ranges", () => {
+    const mod = parseModule(
+      withNames({ workbook: { name: "Book1", names: { Rate: "a2" } } }, { names: { Both: "A1:A2" } }),
+    );
+    expect(mod.workbook.names).toEqual({ Rate: "$A$2" });
+    expect(mod.tasks[0].names).toEqual({ Both: "$A$1:$A$2" });
+  });
+
+  it("lets a task only define names, opening on the first one", () => {
+    const mod = parseModule({
+      ...minimal,
+      tasks: [{ text: "Name A2 Rate.", names: { Rate: "A2" }, rules: [] }],
+    });
+    expect(mod.tasks[0]).toMatchObject({ range: undefined, solution: undefined, hint: "A2" });
+    expect(mod.autopilot).toEqual([{ taskId: "A", kind: "doit" }]);
+  });
+
+  it("reports bad names, duplicates and ranges off the sheet, with their paths", () => {
+    const names = { Q1: "A1", rate: "A1", RATE: "A2", Far: "ZZ1" };
+    expect(problems(withNames({ workbook: { name: "B", names } }))).toEqual([
+      'workbook.names.Q1: "Q1" looks like a cell reference, so it can\'t be a name',
+      'workbook.names: "rate" and "RATE" are the same name',
+      "workbook.names.Far: ZZ1 is outside the sheet (20 columns, 40 rows)",
+    ]);
+  });
+
+  it("needs a range with a solution, and something for Do it", () => {
+    expect(problems(withNames({}, { solution: undefined }))).toContain(
+      "tasks[0].solution: is needed with range",
+    );
+    expect(problems(withNames({}, { range: undefined, solution: undefined }))).toContain(
+      "tasks[0]: needs a range and solution, or names, for Do it",
+    );
+  });
+
+  it("reports a formula using a name no one defines, or a function simmy lacks", () => {
+    expect(problems(withNames({}, { solution: "=A1*Rate" }))).toContain(
+      'tasks[0].solution: "=A1*Rate" uses Rate, which no name in workbook.names or a task\'s names defines',
+    );
+    expect(problems(withNames({}, { solution: "=VLOOKUP(A1,A1:A2,1)" }))).toContain(
+      'tasks[0].solution: "=VLOOKUP(A1,A1:A2,1)" uses VLOOKUP, which this simulator doesn\'t have',
+    );
+    const defined = withNames({ workbook: { name: "B", names: { Rate: "A2" } } }, { solution: "=A1*rate" });
+    expect(problems(defined)).toEqual([]);
   });
 });

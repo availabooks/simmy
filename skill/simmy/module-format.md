@@ -143,6 +143,10 @@ cursor's movement is fitted into each clip's length, so a step lasts as long as 
 ## Formulas
 
 Formulas support `+ - * / ^ & %`, comparisons (`= <> < > <= >=`), ranges, `$` references and
-these functions: ABS, AVERAGE, CORREL, COUNT, COUNTA, COUNTIF, IF, MAX, MEDIAN, MIN, MODE,
-MODE.SNGL, ROUND, SQRT, STDEV, STDEV.P, STDEV.S, SUM, VAR, VAR.P, VAR.S. Anything else is
-reported by `simmy validate`. Design tasks around these functions.
+these functions: ABS, AVERAGE, CONCAT, CORREL, COUNT, COUNTA, COUNTBLANK, COUNTIF, IF, LEFT, LEN,
+LOWER, MAX, MEDIAN, MID, MIN, MODE, MODE.SNGL, RANDBETWEEN, RIGHT, ROUND, SEQUENCE, SORT, SQRT,
+STDEV, STDEV.P, STDEV.S, SUM, TEXTJOIN, UNIQUE, UPPER, VAR, VAR.P, VAR.S. Defined names work in
+formulas, and so do Excel 365's dynamic arrays: a formula that returns several values (SORT,
+UNIQUE, SEQUENCE, `=A2:A9*2`) spills into the cells below and to the right, or shows `#SPILL!`
+when something is in the way, and `A2#` refers to everything A2 spills. A function not on this
+list is reported by `simmy validate`, so design tasks around these.

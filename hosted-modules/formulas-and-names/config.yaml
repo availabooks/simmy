@@ -1,0 +1,189 @@
+# Practice for MO-210's formula skills: defined names (the Name Box, Create from Selection),
+# names in formulas, text functions, dynamic arrays that spill, TEXTJOIN, COUNTBLANK,
+# RANDBETWEEN, and locking a reference with F4. See plans/MO-210_Teaching_Checklist.md.
+version: 1
+
+workbook:
+  name: Northwind Staff
+  sheet: Staff
+  # Defined from the start, so the Name Box and Go To have a name to show.
+  names: { Emails: E2:E9 }
+
+assignment:
+  title: Formulas and Names Practice
+  section: Assessment Section 1
+  text: >-
+    Northwind's sales team is paid a bonus on their sales, and HR wants a few summaries of the
+    staff list. Give the key cells names, then use them, along with text and dynamic array
+    functions, to finish the sheet. Use one formula wherever a task asks for a list.
+
+sheet:
+  rows: 30
+  columns: 14
+  widths: { A: 64, B: 64, C: 80, D: 72, E: 168, F: 72, G: 56, H: 16, I: 90, J: 92 }
+  start: J2
+  cells:
+    A1: First
+    B1: Last
+    C1: Dept
+    D1: Sales
+    E1: Email
+    F1: Bonus
+    G1: Code
+    A2: Maria
+    B2: Lopez
+    C2: Sales
+    D2: 4200
+    E2: maria@example.com
+    A3: James
+    B3: Chen
+    C3: Support
+    D3: 3100
+    E3: james@example.com
+    A4: Aisha
+    B4: Khan
+    C4: Sales
+    D4: 5150
+    A5: Tom
+    B5: Becker
+    C5: Marketing
+    D5: 2800
+    E5: tom@example.com
+    A6: Lena
+    B6: Park
+    C6: Support
+    D6: 3650
+    E6: lena@example.com
+    A7: Omar
+    B7: Diaz
+    C7: Marketing
+    D7: 2950
+    A8: Sofia
+    B8: Rossi
+    C8: Sales
+    D8: 4800
+    E8: sofia@example.com
+    A9: Ken
+    B9: Ito
+    C9: Support
+    D9: 3300
+    E9: ken@example.com
+    I2: Bonus rate
+    J2: 0.05
+    I4: Departments
+    I8: Team
+    I10: No email
+    I12: Prize draw
+    I14: Total bonus
+  styles:
+    - { range: A1:G1, fill: "#1f4e78", color: "#ffffff", bold: true }
+    - { range: I2 I4 I8 I10 I12 I14, bold: true }
+    - { range: J2, format: 0.00% }
+    - { range: D2:D9 F2:F9 J14, format: "$#,##0.00" }
+    - { range: F2:G9 J4 J8 J10 J12 J14, fill: "#fff2cc", lined: true }
+  outlines:
+    - { range: A1:G9 }
+
+tasks:
+  - id: A
+    name: Rate name
+    text: Give the bonus rate in J2 the name Rate.
+    details:
+      - Click J2, type Rate in the Name Box at the left of the formula bar, and press Enter.
+    names: { Rate: J2 }
+    rules:
+      - { kind: name, name: Rate, range: J2, points: 10, message: J2 should be named Rate. }
+
+  - id: B
+    name: Sales name
+    text: Name the sales figures in D2:D9 Sales, from the header in D1.
+    details:
+      - Select D1:D9, then Formulas › Create from Selection, with Top row checked.
+    names: { Sales: D2:D9 }
+    rules:
+      - { kind: name, name: Sales, range: D2:D9, points: 10, message: D2:D9 should be named Sales. }
+
+  - id: C
+    name: Bonus
+    text: In F2, calculate the bonus, the sales in D2 times the rate, using the name Rate. Copy it down through F9.
+    range: F2:F9
+    solution: =D2*Rate
+    rules:
+      - { kind: value, cell: F2, formula: =$D$2*$J$2, points: 4, message: F2 should be the sales times the bonus rate. }
+      - { kind: contains, cell: F2, text: Rate, points: 3, message: F2 should use the name Rate. }
+      - { kind: copied, range: F2:F9, points: 3, message: Copy the formula in F2 down through F9. }
+
+  - id: D
+    name: Codes
+    text: In G2, make an ID code from the first letter of the first name and the first three letters of the last name, in capitals. Copy it down through G9.
+    details:
+      - Maria Lopez gets MLOP.
+    range: G2:G9
+    solution: =UPPER(LEFT(A2,1)&LEFT(B2,3))
+    rules:
+      - { kind: value, cell: G2, formula: "=UPPER(LEFT($A$2,1)&LEFT($B$2,3))", points: 4, message: G2 should be MLOP. }
+      - { kind: contains, cell: G2, text: "UPPER(", points: 2, message: Use UPPER to make the code capitals. }
+      - { kind: contains, cell: G2, text: "LEFT(", points: 2, message: Use LEFT to take the first letters. }
+      - { kind: copied, range: G2:G9, points: 2, message: Copy the formula in G2 down through G9. }
+
+  - id: E
+    name: Departments
+    text: In J4, list each department once, in alphabetical order, with a single formula.
+    details:
+      - The list spills into the cells below.
+    range: J4
+    solution: =SORT(UNIQUE(C2:C9))
+    rules:
+      - { kind: value, range: J4:J6, formula: "=SORT(UNIQUE($C$2:$C$9))", points: 9, message: "J4:J6 should list Marketing, Sales and Support." }
+      - { kind: contains, cell: J4, text: "UNIQUE(", points: 3, message: Use UNIQUE to list each department once. }
+      - { kind: contains, cell: J4, text: "SORT(", points: 3, message: Use SORT to put the list in order. }
+
+  - id: F
+    name: Team
+    text: In J8, list everyone's first name in one cell, separated by a comma and a space.
+    range: J8
+    solution: '=TEXTJOIN(", ",TRUE,A2:A9)'
+    rules:
+      - { kind: value, cell: J8, formula: '=TEXTJOIN(", ",TRUE,$A$2:$A$9)', points: 7, message: "J8 should read Maria, James, Aisha and so on." }
+      - { kind: contains, cell: J8, text: "TEXTJOIN(", points: 3, message: Use TEXTJOIN to join the names. }
+
+  - id: G
+    name: No email
+    text: In J10, count the staff with no email address, using the name Emails.
+    range: J10
+    solution: =COUNTBLANK(Emails)
+    rules:
+      - { kind: equals, cell: J10, value: 2, points: 6, message: Two people have no email address. }
+      - { kind: contains, cell: J10, text: "COUNTBLANK(", points: 4, message: Use COUNTBLANK to count the empty cells. }
+
+  - id: H
+    name: Prize draw
+    text: In J12, pick a random staff number from 1 to 8 for the prize draw.
+    range: J12
+    solution: =RANDBETWEEN(1,8)
+    rules:
+      - { kind: contains, cell: J12, text: "RANDBETWEEN(", points: 5, message: Use RANDBETWEEN to pick the number. }
+      - { kind: between, cell: J12, lower: 1, upper: 8, points: 5, message: The number should be from 1 to 8. }
+
+  - id: I
+    name: Total bonus
+    text: In J14, total the bonuses another way, adding up the sales using the name Sales and multiplying by the rate in J2, with J2 locked.
+    details:
+      - While typing the formula, press F4 on J2 to make it $J$2.
+    range: J14
+    solution: =SUM(Sales)*$J$2
+    rules:
+      - { kind: value, cell: J14, formula: =SUM($D$2:$D$9)*$J$2, points: 6, message: J14 should be the total sales times the bonus rate. }
+      - { kind: contains, cell: J14, text: Sales, points: 4, message: Add up the sales using the name Sales. }
+      - { kind: reference, cell: J14, ref: J2, forms: [$J$2], points: 5, message: Lock the rate as $J$2 (or use the name Rate). }
+
+note:
+  title: Try it
+  steps:
+    - Click J2, type Rate in the Name Box, and press Enter. J2 now has a name.
+    - In F2, type =D2*Rate and press Enter. Formulas can use names instead of addresses.
+    - In J4, type =SORT(UNIQUE(C2:C9)). The answer spills into the cells below.
+    - Press F5 to open Go To and jump to a name.
+
+poster:
+  range: A1:G6

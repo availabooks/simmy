@@ -113,6 +113,7 @@ tasks:
     hint: D6          # default: the range's top-left cell
     range: D6:D12     # where Do it writes
     solution: =C6*$C$2
+    names: { Rate: C2 }   # optional: names Do it defines (a task needs range and solution, names, or both)
     points: 25        # default: the rules' points added up
     rules:
       - { kind: value, cell: D6, formula: =C6*$C$2, points: 5, message: … }
@@ -131,11 +132,22 @@ copy:                 # optional wording overrides
   submitSteps: [Validate Key, Prepare Rubric, Check for Completeness, Evaluate Tasks, Finalize Score]
 ```
 
-Rules:
+Rules, each mirroring one of the add-in's grading steps:
 
-- `value`: the cell equals what `formula` gives on the student's own sheet.
-- `reference`: the cell's formula refers to `ref`; with `forms`, only those `$` spellings count.
-- `copied`: every cell in `range` holds the first cell's formula, copied down or across.
+- `value` (values_match): the cell equals what `formula` gives on the student's own sheet. With
+  `range` instead of `cell`, the formula's array must fill the range: use it for a result that spills.
+- `reference` (find_references): the cell's formula refers to `ref`, directly or through a name;
+  with `forms`, only those `$` spellings count.
+- `copied` (cells_copied): every cell in `range` holds the first cell's formula, copied down or across.
+- `equals` (value_correct): the cell holds `value` exactly, or one of a list; `tolerance` and `trim`
+  loosen that.
+- `contains` (formula_contains): every cell's formula includes `text`, such as `"TEXTJOIN("`.
+- `name` (check_name_exists, check_named_range): the name is defined, and with `range`, refers to it.
+- `between` (value_between): every value is from `lower` to `upper`, for RANDBETWEEN.
+- `selected` (activecell): the student ended on `range`, by Go To or the Name Box.
+
+`workbook.names` defines names from the start, such as `{ Rate: C2 }`, and a task's `names` are
+what its Do it defines. Names follow Excel's rules and match without regard to case.
 
 Each narrated entry has its own `audio` file and `transcript`. The clip loads when that line starts, plays at its own speed, and the cursor fits the entry into the clip. An entry with only those two fields waits on the line. `done: false` types or uses the wand without marking the task finished. `submit: true` presses Next, then Submit Now. Leave `audio` and `transcript` off and the demo keeps its own pace.
 
@@ -146,9 +158,12 @@ A bar along the bottom of the desktop pauses, resumes, restarts, rewinds, fast-f
 `parseModule()` checks a module and reports every problem with its path, for example
 `tasks[1].rules[0].cell: "D66" is outside the sheet (20 columns, 40 rows)`.
 
-Formulas support `+ - * / ^ & %`, comparisons, ranges, `$` references and ABS, AVERAGE,
-CORREL, COUNT, COUNTA, COUNTIF, IF, MAX, MEDIAN, MIN, MODE, MODE.SNGL, ROUND, SQRT, STDEV,
-STDEV.P, STDEV.S, SUM, VAR, VAR.P, VAR.S.
+Formulas support `+ - * / ^ & %`, comparisons, ranges, `$` references, defined names, and
+dynamic arrays as in Excel 365: a formula that returns several values spills into the cells
+below and to the right (or shows `#SPILL!`), and `A1#` refers to everything A1 spills. The
+functions are ABS, AVERAGE, CONCAT, CORREL, COUNT, COUNTA, COUNTBLANK, COUNTIF, IF, LEFT, LEN,
+LOWER, MAX, MEDIAN, MID, MIN, MODE, MODE.SNGL, RANDBETWEEN, RIGHT, ROUND, SEQUENCE, SORT, SQRT,
+STDEV, STDEV.P, STDEV.S, SUM, TEXTJOIN, UNIQUE, UPPER, VAR, VAR.P and VAR.S.
 
 ## Develop
 

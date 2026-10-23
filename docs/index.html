@@ -473,9 +473,10 @@ try {
           <section id="grading">
             <h2>Tasks and grading</h2>
             <p>
-              Each task has a <code>range</code> where <b>Do it</b> writes the <code>solution</code>, and a list of
-              rules. A rule earns its points when it passes. A task is worth the sum of its rules' points unless
-              <code>points</code> says otherwise.
+              Each task has a <code>range</code> where <b>Do it</b> writes the <code>solution</code>, or
+              <code>names</code> it defines, or both, and a list of rules. A rule earns its points when it passes. A
+              task is worth the sum of its rules' points unless <code>points</code> says otherwise. Each rule mirrors
+              one of the Excel Educator add-in's grading steps.
             </p>
             <div class="table-wrap">
               <table>
@@ -488,23 +489,46 @@ try {
                 <tbody>
                   <tr>
                     <td><code>value</code></td>
-                    <td>The cell equals what <code>formula</code> gives on the student's own sheet.</td>
+                    <td>The cell equals what <code>formula</code> gives on the student's own sheet. With <code>range</code>, the formula's array fills the range, for a result that spills.</td>
                   </tr>
                   <tr>
                     <td><code>reference</code></td>
-                    <td>
-                      The cell's formula refers to <code>ref</code>. With <code>forms</code>, only those
-                      <code>$</code> spellings count, so <code>[C$2, $C$2]</code> requires an absolute row.
-                    </td>
+                    <td>The cell's formula refers to <code>ref</code>, directly or through a name. With <code>forms</code>, only those
+                      <code>$</code> spellings count, so <code>[C$2, $C$2]</code> requires an absolute row.</td>
                   </tr>
                   <tr>
                     <td><code>copied</code></td>
                     <td>Every cell in <code>range</code> holds the first cell's formula, copied down or across.</td>
                   </tr>
+                  <tr>
+                    <td><code>equals</code></td>
+                    <td>The cell holds <code>value</code> exactly, or one of a list; <code>tolerance</code> and <code>trim</code> loosen that.</td>
+                  </tr>
+                  <tr>
+                    <td><code>contains</code></td>
+                    <td>Every cell's formula includes <code>text</code>, such as <code>"TEXTJOIN("</code>.</td>
+                  </tr>
+                  <tr>
+                    <td><code>name</code></td>
+                    <td>The name is defined, and with <code>range</code>, refers to that range.</td>
+                  </tr>
+                  <tr>
+                    <td><code>between</code></td>
+                    <td>Every value is from <code>lower</code> to <code>upper</code>: for RANDBETWEEN, whose numbers change.</td>
+                  </tr>
+                  <tr>
+                    <td><code>selected</code></td>
+                    <td>The student ended on <code>range</code>, by Go To or the Name Box.</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
             <p>A rule's <code>message</code> is what the student reads when it fails.</p>
+            <p>
+              <code>workbook.names</code> defines names from the start, such as <code>{ Rate: C2 }</code>, and a
+              task's <code>names</code> are what its Do it defines. Names follow Excel's rules and match without
+              regard to case.
+            </p>
           </section>
 
           <section id="narration">
@@ -536,15 +560,20 @@ try {
           <section id="formulas">
             <h2>Formulas</h2>
             <p>
-              The engine supports <code>+ - * / ^ &amp; %</code>, comparisons, ranges and <code>$</code> references,
-              and these functions:
+              The engine supports <code>+ - * / ^ &amp; %</code>, comparisons, ranges, <code>$</code> references
+              (F4 cycles them), defined names, and dynamic arrays as in Excel 365: a formula that returns several
+              values spills into the cells below and to the right, or shows <code>#SPILL!</code> when something is
+              in the way, and <code>A1#</code> refers to everything A1 spills. The functions:
             </p>
             <p class="functions">
-              <code>ABS</code> <code>AVERAGE</code> <code>CORREL</code> <code>COUNT</code> <code>COUNTA</code>
-              <code>COUNTIF</code> <code>IF</code> <code>MAX</code> <code>MEDIAN</code> <code>MIN</code>
-              <code>MODE</code> <code>MODE.SNGL</code> <code>ROUND</code> <code>SQRT</code> <code>STDEV</code>
-              <code>STDEV.P</code> <code>STDEV.S</code> <code>SUM</code> <code>VAR</code> <code>VAR.P</code>
-              <code>VAR.S</code>
+              <code>ABS</code> <code>AVERAGE</code> <code>CONCAT</code> <code>CORREL</code> <code>COUNT</code>
+              <code>COUNTA</code> <code>COUNTBLANK</code> <code>COUNTIF</code> <code>IF</code>
+              <code>LEFT</code> <code>LEN</code> <code>LOWER</code> <code>MAX</code> <code>MEDIAN</code>
+              <code>MID</code> <code>MIN</code> <code>MODE</code> <code>MODE.SNGL</code>
+              <code>RANDBETWEEN</code> <code>RIGHT</code> <code>ROUND</code> <code>SEQUENCE</code>
+              <code>SORT</code> <code>SQRT</code> <code>STDEV</code> <code>STDEV.P</code> <code>STDEV.S</code>
+              <code>SUM</code> <code>TEXTJOIN</code> <code>UNIQUE</code> <code>UPPER</code> <code>VAR</code>
+              <code>VAR.P</code> <code>VAR.S</code>
             </p>
           </section>
 

@@ -38,9 +38,12 @@ The folder name is the module's name in URLs, so use lowercase words and hyphens
 2. Lay out the sheet first: labels, given numbers, and the empty cells the student fills. Only
    cells the student doesn't write go in `sheet.cells`.
 3. Write each task: what to do (`text`), where Do it writes (`range`), the answer (`solution`),
-   and `rules` that award points. Prefer a `value` rule for the answer, a `reference` rule for each
-   input cell that must be referenced rather than typed, and a `copied` rule when the formula is
-   filled across a range.
+   and `rules` that award points. A naming task gives `names` for Do it to define instead (or
+   as well). Prefer a `value` rule for the answer, a `reference` rule for each input cell that
+   must be referenced rather than typed, and a `copied` rule when the formula is filled across a
+   range. Use `contains` to require a function (`"TEXTJOIN("`), `name` for a naming task, a
+   `value` rule's `range` for a result that spills, and `contains` with `between` for
+   RANDBETWEEN, whose numbers change.
 4. Run `simmy validate <folder>` and fix everything it reports. Repeat until it says valid.
    - Lines starting with `-` are errors: the module won't load, or its own solution fails its
      rubric (`Do it loses N points`). Fix the solution or the rule, whichever is wrong.

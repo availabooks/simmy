@@ -19,11 +19,15 @@ installed, so keep the two consistent:
 
 ## Layout
 
-- `src/engine/sheet.ts`: the spreadsheet engine (parse, evaluate, shift references, format). No UI.
+- `src/engine/`: the spreadsheet engine, no UI. `sheet.ts` parses and evaluates formulas (dynamic
+  arrays that spill, defined names), shifts references and formats values. `names.ts` has Excel's
+  naming rules and what the name dialogs need. `workbook.ts` is the state the grid, Do it and
+  grading share: cells, names and the seed that picks RANDBETWEEN's numbers.
 - `src/module/`: `types.ts` (the module shape), `parse.ts` (validation, with path-specific errors),
   `grade.ts` (rubric rules, Do it and Undo it).
 - `src/ui/`: Preact UI. `Simmy.tsx` (desktop and windows), `Workbook.tsx` (grid), `Ribbon.tsx`,
-  `TaskPane.tsx`, `autopilot.ts` (the auto demo), `styles.css`.
+  `TaskPane.tsx`, `autopilot.ts` (the auto demo), `styles.css`. `Dialog.tsx` is the shell for
+  Excel's dialogs (`NameDialogs.tsx`: Go To and the name dialogs); `Menu.tsx` is the dropdown.
 - `src/element.ts`: the `<simmy-app>` custom element. It renders into a shadow root.
 - `src/index.ts`: the public exports. It also registers the element.
 - `hosted-modules/`: module sources (`<name>/config.yaml` and `<name>/audio/`). `modules-site/`: the Workers static-assets project that publishes them. `embed/` and `examples/`: iframe wrapper and a plain-HTML example.
@@ -53,8 +57,12 @@ coverage is thin, so check UI changes in the browser with `npm run dev`.
 - Everything runs client-side. There is no backend.
 - The host page's CSS must never reach the simulator, and the simulator's must never leak out.
   Keep styles inside the shadow root (`src/ui/styles.css`).
-- New formula functions go in `sheet.ts` with a test in `test/sheet.test.ts`. A new rubric rule
-  kind touches `types.ts`, `parse.ts` and `grade.ts`.
+- New formula functions go in `sheet.ts` (with their arguments and Excel category in `FUNCTIONS`)
+  and get a test in `test/functions.test.ts`; the docs list every function, which
+  `test/docs.test.ts` checks. A new rubric rule kind touches `types.ts`, `parse.ts`, `grade.ts`,
+  `keys.ts` and the skill's `module-format.md`, and should mirror an ee-atlas grading step.
+- Excel for Windows (Microsoft 365) is the reference for how a feature looks and behaves.
+  `plans/MO-210_verification.md` lists Microsoft's pages to check each feature against.
 
 ## Releasing
 

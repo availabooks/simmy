@@ -38,16 +38,18 @@ button:focus-visible {
 }
 
 /*
- * With fit-screen, the whole simulation (heading, toolbar, desktop and the playback bar along
+ * With fit-screen, the simulation (the host's heading, the desktop and the playback bar along
  * its bottom) fits the screen under the host's sticky header (--chrome-h, set by the element;
- * 0px without one). The desktop takes what the heading leaves. On a very short screen it stops
- * at --simmy-min-height and the page scrolls instead: 600px keeps the Mac desktop's Excel window
+ * 0px without one). The desktop takes what the heading leaves. A kiosk's controls above the
+ * desktop don't count: --xd-toolbar-space (measured by Simmy) adds their height back, so they
+ * sit above a desktop that fills the screen. On a very short screen the desktop stops at
+ * --simmy-min-height and the page scrolls instead: 600px keeps the Mac desktop's Excel window
  * at its own minimum size.
  */
 .xd.is-fit {
   display: flex;
   flex-direction: column;
-  height: calc(100svh - var(--chrome-h, 0px) - 24px);
+  height: calc(100svh - var(--chrome-h, 0px) - 24px + var(--xd-toolbar-space, 0px));
   /* Grow past the screen rather than let a desktop at its minimum spill out over the page below. */
   min-height: min-content;
 }
@@ -3027,7 +3029,8 @@ button:focus-visible {
     display: flex;
   }
 
-  .xd-desktop:hover .xd-veil,
+  /* The playback bar is inside the desktop, but pointing at it (or its menus) is about playback. */
+  .xd-desktop:hover:not(:has(.xd-transport:hover)) .xd-veil,
   .xd-veil:focus-within {
     opacity: 1;
     pointer-events: auto;

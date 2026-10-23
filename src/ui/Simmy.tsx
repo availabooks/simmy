@@ -268,6 +268,8 @@ export function Simmy({
   const [calm, setCalm] = useState(!starts);
   const [line, setLine] = useState(-1);
   const [needsPlay, setNeedsPlay] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const desktopRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const posterRef = useRef<HTMLButtonElement>(null);
@@ -315,6 +317,34 @@ export function Simmy({
     mutedRef.current = !movie;
     setMuted(!movie);
   }, [movie]);
+
+  // With fit-screen, the kiosk's controls don't count against the screen: the desktop gets the
+  // height it would have without them, and they sit above it. The space they take is measured,
+  // because it depends on the fonts and on whether the host put a heading above them.
+  useEffect(() => {
+    const root = rootRef.current;
+    const toolbar = toolbarRef.current;
+    const head = toolbar?.parentElement;
+    if (!fitScreen || !root || !toolbar || !head) {
+      return;
+    }
+    const sync = () => {
+      // The toolbar, and the space after it: the gap below the host's heading when there is one,
+      // otherwise the heading area's margin above the desktop. A hidden toolbar takes none.
+      const style = getComputedStyle(head);
+      const slot = head.firstElementChild as HTMLElement | null;
+      const after = parseFloat(slot && slot.offsetHeight > 0 ? style.rowGap : style.marginBottom) || 0;
+      const space = toolbar.offsetHeight > 0 ? toolbar.offsetHeight + after : 0;
+      root.style.setProperty("--xd-toolbar-space", `${space}px`);
+    };
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(head);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--xd-toolbar-space");
+    };
+  }, [fitScreen, movie]);
 
   useEffect(() => {
     const query = window.matchMedia(PHONE_QUERY);
@@ -1073,6 +1103,7 @@ export function Simmy({
 
   return (
     <div
+      ref={rootRef}
       class={`xd${fitScreen ? " is-fit" : ""}${narrating ? " is-narrating" : ""}${hold === "control" ? " is-user" : ""}${skipping ? " is-skipping" : ""}`}
       data-platform={platform}
     >
@@ -1080,7 +1111,11 @@ export function Simmy({
       {(head || !movie) && (
         <div class="xd-head">
           <div class="xd-head-slot">{head}</div>
-          {!movie && <div class="xd-toolbar">{controls}</div>}
+          {!movie && (
+            <div class="xd-toolbar" ref={toolbarRef}>
+              {controls}
+            </div>
+          )}
         </div>
       )}
       <div class="xd-compact">

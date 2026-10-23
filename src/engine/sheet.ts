@@ -12,6 +12,9 @@ export type Range = { c1: number; r1: number; c2: number; r2: number };
 /** Raw cell input keyed by address, exactly as typed ("3.38", "=AVERAGE(D3:D37)"). */
 export type Inputs = Record<string, string>;
 
+/** Defined names: each name as defined (keeping its case) → its absolute range, "$C$2" or "$A$2:$A$9". */
+export type Names = Record<string, string>;
+
 export type ErrorCode = "#CALC!" | "#DIV/0!" | "#N/A" | "#NAME?" | "#NUM!" | "#REF!" | "#SPILL!" | "#VALUE!";
 export type CellError = { error: ErrorCode };
 export type Value = number | string | boolean | CellError | null;
@@ -117,7 +120,7 @@ type Token =
 
 const REF_RE = /^\$?[A-Za-z]{1,3}\$?\d{1,7}(?![A-Za-z0-9_.(])/;
 const NUM_RE = /^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/;
-const NAME_RE = /^[A-Za-z_][A-Za-z0-9_.]*/;
+const NAME_RE = /^[A-Za-z_\\][A-Za-z0-9_.]*/;
 const OPS = ["<>", "<=", ">=", "+", "-", "*", "/", "^", "&", "=", "<", ">", "(", ")", ",", ":", "%"];
 
 export function tokenize(body: string): Token[] {
@@ -191,6 +194,8 @@ type Node =
   | { type: "call"; name: string; args: Node[] }
   /** An argument left empty, as in SEQUENCE(3,,10). */
   | { type: "missing" }
+  /** A defined name, upper-cased; what it refers to is looked up when the formula runs. */
+  | { type: "name"; name: string }
   | { type: "unary"; op: string; arg: Node }
   | { type: "percent"; arg: Node }
   | { type: "binary"; op: string; left: Node; right: Node };
@@ -291,7 +296,7 @@ export function parseFormula(formula: string): Node {
         if (upper === "TRUE" || upper === "FALSE") {
           return { type: "bool", value: upper === "TRUE" };
         }
-        return { type: "call", name: `#NAME:${upper}`, args: [] };
+        return { type: "name", name: upper };
       }
       case "op":
         if (token.text === "(") {
@@ -836,6 +841,8 @@ const SCALAR_FUNCTIONS: Record<string, ScalarFunction> = {
 
 type Ctx = {
   cell: (addr: Addr) => Value;
+  /** The range a defined name refers to (given upper-cased), or null if there's no such name. */
+  name: (upper: string) => Range | null;
   /** A random number in [0, 1), the same for the same seed, cell and call. */
   rand: () => number;
 };
@@ -854,7 +861,8 @@ function rangeMatrix(range: Range, ctx: Ctx): Matrix {
 
 function evalArg(node: Node, ctx: Ctx): Arg {
   // A reference is a range to a function, even a single cell: SUM(A1) skips text in A1.
-  const ref = node.type === "ref" || node.type === "range";
+  const ref =
+    node.type === "ref" || node.type === "range" || (node.type === "name" && ctx.name(node.name) !== null);
   const result = node.type === "ref" ? [[ctx.cell(node.addr)]] : evalNode(node, ctx);
   if (!isMatrix(result)) {
     return { kind: "scalar", value: result };
@@ -1014,7 +1022,7 @@ function callIf(nodes: Node[], ctx: Ctx): Result {
 }
 
 function callFunction(name: string, nodes: Node[], ctx: Ctx): Result {
-  if (name.startsWith("#NAME:") || !FUNCTION_SET.has(name)) {
+  if (!FUNCTION_SET.has(name)) {
     return err("#NAME?");
   }
   if (name === "IF") {
@@ -1333,6 +1341,15 @@ function evalNode(node: Node, ctx: Ctx): Result {
       return ctx.cell(node.addr);
     case "range":
       return rangeMatrix(node.range, ctx);
+    case "name": {
+      const range = ctx.name(node.name);
+      if (!range) {
+        return err("#NAME?");
+      }
+      return range.c1 === range.c2 && range.r1 === range.r2
+        ? ctx.cell({ col: range.c1, row: range.r1 })
+        : rangeMatrix(range, ctx);
+    }
     case "call":
       return callFunction(node.name, node.args, ctx);
     case "unary":
@@ -1376,6 +1393,8 @@ export function parseConstant(raw: string): Value {
 export type EvalOptions = {
   /** The sheet's size. An array that would spill past it is #SPILL!. */
   bounds?: { rows: number; cols: number };
+  /** Defined names the formulas can use. */
+  names?: Names;
   /**
    * Picks RANDBETWEEN's numbers. The same seed gives the same numbers, so what a cell shows
    * and what grading sees agree. Change it to recalculate, as Excel does on every edit.
@@ -1423,6 +1442,18 @@ function cellValue(value: Value): Value {
   return typeof value === "number" && !Number.isFinite(value) ? err("#NUM!") : value;
 }
 
+/** Names looked up without regard to case, as Excel does. */
+function namedRanges(names: Names = {}): Map<string, Range> {
+  const out = new Map<string, Range>();
+  for (const [name, ref] of Object.entries(names)) {
+    const range = parseRange(ref.replace(/\$/g, ""));
+    if (range) {
+      out.set(name.toUpperCase(), range);
+    }
+  }
+  return out;
+}
+
 const byPosition = (a: string, b: string): number => {
   const x = parseAddr(a) as Addr;
   const y = parseAddr(b) as Addr;
@@ -1450,8 +1481,10 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
   // when another formula is added.
   let current = "";
   const streams = new Map<string, () => number>();
+  const nameRanges = namedRanges(opts.names);
   const ctx: Ctx = {
     cell: (addr) => cell(addr),
+    name: (upper) => nameRanges.get(upper) ?? null,
     rand: () => {
       let next = streams.get(current);
       if (!next) {
@@ -1536,7 +1569,8 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
     const at = parseAddr(key) as Addr;
     const target = { c1: at.col, r1: at.row, c2: at.col + cols - 1, r2: at.row + rows - 1 };
     const addrs = rangeAddrs(target);
-    const offSheet = opts.bounds !== undefined && (target.c2 >= opts.bounds.cols || target.r2 >= opts.bounds.rows);
+    const { bounds } = opts;
+    const offSheet = bounds !== undefined && (target.c2 >= bounds.cols || target.r2 >= bounds.rows);
     const inTheWay = addrs.some((addr) => {
       const other = addrName(addr);
       return other !== key && ((inputs[other] ?? "") !== "" || other in out.owner);
@@ -1641,8 +1675,8 @@ export function shiftFormula(formula: string, dCol: number, dRow: number): strin
   return `=${out}${body.slice(last)}`;
 }
 
-/** The ranges a formula points at, in order, for the colored reference outlines. */
-export function formulaRanges(formula: string): Range[] {
+/** The ranges a formula points at, in order, for the colored reference outlines. Names count. */
+export function formulaRanges(formula: string, names: Names = {}): Range[] {
   if (!formula.startsWith("=")) {
     return [];
   }
@@ -1653,8 +1687,15 @@ export function formulaRanges(formula: string): Range[] {
     return [];
   }
   const out: Range[] = [];
+  const named = namedRanges(names);
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
+    const call = tokens[i + 1]?.kind === "op" && tokens[i + 1].text === "(";
+    const range = token.kind === "name" && !call ? named.get(token.text.toUpperCase()) : undefined;
+    if (range) {
+      out.push(range);
+      continue;
+    }
     if (token.kind !== "ref") {
       continue;
     }
@@ -1785,8 +1826,11 @@ export function formatValue(value: Value, format: NumberFormat, widthPx: number)
 
 /* ----------------------------------------------------------------- editing */
 
-/** What Excel does on Enter: close dangling parentheses and upper-case names and references. */
-export function normalizeFormula(formula: string): string {
+/**
+ * What Excel does on Enter: close dangling parentheses, upper-case references and functions,
+ * and write each defined name the way it was defined. Unknown names stay as typed.
+ */
+export function normalizeFormula(formula: string, names: Names = {}): string {
   if (!isFormula(formula)) {
     return formula;
   }
@@ -1799,14 +1843,22 @@ export function normalizeFormula(formula: string): string {
   }
   const open = tokens.filter((t) => t.kind === "op" && t.text === "(").length;
   const close = tokens.filter((t) => t.kind === "op" && t.text === ")").length;
+  const defined = new Map(Object.keys(names).map((name) => [name.toUpperCase(), name]));
   let out = "";
   let last = 0;
-  for (const token of tokens) {
-    if (token.kind === "ref" || token.kind === "name") {
-      out += body.slice(last, token.start) + token.text.toUpperCase();
-      last = token.start + token.text.length;
+  tokens.forEach((token, i) => {
+    if (token.kind !== "ref" && token.kind !== "name") {
+      return;
     }
-  }
+    const upper = token.text.toUpperCase();
+    const call = tokens[i + 1]?.kind === "op" && tokens[i + 1].text === "(";
+    const text =
+      token.kind === "ref" || call || upper === "TRUE" || upper === "FALSE"
+        ? upper
+        : (defined.get(upper) ?? token.text);
+    out += body.slice(last, token.start) + text;
+    last = token.start + token.text.length;
+  });
   body = out + body.slice(last);
   return `=${body}${")".repeat(Math.max(0, open - close))}`;
 }
@@ -1927,8 +1979,11 @@ export function pasteWrites(clip: Clip, at: Addr): Inputs {
   return writes;
 }
 
-/** Every cell reference in a formula as typed (with any $), and the range it belongs to. */
-export function formulaReferences(formula: string): { text: string; range: Range }[] {
+/**
+ * Every cell reference in a formula as typed (with any $), and the range it belongs to. A
+ * defined name counts as the reference it stands for, written as defined ("$C$2").
+ */
+export function formulaReferences(formula: string, names: Names = {}): { text: string; range: Range }[] {
   if (!isFormula(formula)) {
     return [];
   }
@@ -1939,8 +1994,18 @@ export function formulaReferences(formula: string): { text: string; range: Range
     return [];
   }
   const out: { text: string; range: Range }[] = [];
+  const defined = new Map(Object.entries(names).map(([name, ref]) => [name.toUpperCase(), ref]));
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
+    const call = tokens[i + 1]?.kind === "op" && tokens[i + 1].text === "(";
+    const ref = token.kind === "name" && !call ? defined.get(token.text.toUpperCase()) : undefined;
+    const named = ref ? parseRange(ref.replace(/\$/g, "")) : null;
+    if (ref && named) {
+      for (const part of ref.split(":")) {
+        out.push({ text: part.toUpperCase(), range: named });
+      }
+      continue;
+    }
     const start = token.kind === "ref" ? parseAddr(token.text) : null;
     if (!start) {
       continue;

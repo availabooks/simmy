@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { checkFormula, evaluateBook, evaluateExpression, evaluateSheet, rangeName } from "../src/engine/sheet.ts";
+import {
+  checkFormula,
+  evaluateBook,
+  evaluateExpression,
+  evaluateSheet,
+  rangeName,
+  shiftFormula,
+} from "../src/engine/sheet.ts";
 
 const column = { A1: "1", A2: "2", A3: "3" };
 
@@ -94,5 +101,26 @@ describe("Excel details the array engine brings in", () => {
   it("works out IF element by element for an array test", () => {
     const values = evaluateSheet({ ...column, C1: '=IF(A1:A3>1,"big","small")' });
     expect([values.C1, values.C2, values.C3]).toEqual(["small", "big", "big"]);
+  });
+});
+
+describe("the spilled range operator (A1#)", () => {
+  it("refers to everything a formula spills, as in Microsoft's SUM(A2#) example", () => {
+    const values = evaluateSheet({ A2: "=SEQUENCE(10)", C2: "=SUM(A2#)" });
+    expect(values.C2).toBe(55);
+    expect(evaluateSheet({ A2: "=SEQUENCE(20)", C2: "=SUM(A2#)" }).C2).toBe(210);
+  });
+
+  it("follows the spill as it grows and spills itself", () => {
+    const { values } = evaluateBook({ A1: "=SEQUENCE(3)", C1: "=A1#*10" });
+    expect([values.C1, values.C2, values.C3]).toEqual([10, 20, 30]);
+  });
+
+  it("is #REF! for a cell that doesn't spill", () => {
+    expect(evaluateSheet({ A1: "5", B1: "=SUM(A1#)" }).B1).toEqual({ error: "#REF!" });
+  });
+
+  it("moves with a fill like any reference", () => {
+    expect(shiftFormula("=SUM(A2#)", 1, 0)).toBe("=SUM(B2#)");
   });
 });

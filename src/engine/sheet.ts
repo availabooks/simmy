@@ -121,7 +121,7 @@ type Token =
 const REF_RE = /^\$?[A-Za-z]{1,3}\$?\d{1,7}(?![A-Za-z0-9_.(])/;
 const NUM_RE = /^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/;
 const NAME_RE = /^[A-Za-z_\\][A-Za-z0-9_.]*/;
-const OPS = ["<>", "<=", ">=", "+", "-", "*", "/", "^", "&", "=", "<", ">", "(", ")", ",", ":", "%"];
+const OPS = ["<>", "<=", ">=", "+", "-", "*", "/", "^", "&", "=", "<", ">", "(", ")", ",", ":", "%", "#"];
 
 export function tokenize(body: string): Token[] {
   const tokens: Token[] = [];
@@ -196,6 +196,8 @@ type Node =
   | { type: "missing" }
   /** A defined name, upper-cased; what it refers to is looked up when the formula runs. */
   | { type: "name"; name: string }
+  /** The spilled range operator: A2# is everything the formula in A2 spills. */
+  | { type: "spill"; addr: Addr }
   | { type: "unary"; op: string; arg: Node }
   | { type: "percent"; arg: Node }
   | { type: "binary"; op: string; left: Node; right: Node };
@@ -274,6 +276,10 @@ export function parseFormula(formula: string): Node {
           }
           pos++;
           return { type: "range", range: normalizeRange(start, end) };
+        }
+        if (isOp("#")) {
+          pos++;
+          return { type: "spill", addr: start };
         }
         return { type: "ref", addr: start };
       }
@@ -843,6 +849,8 @@ type Ctx = {
   cell: (addr: Addr) => Value;
   /** The range a defined name refers to (given upper-cased), or null if there's no such name. */
   name: (upper: string) => Range | null;
+  /** The range the formula in a cell spills into, or null if it doesn't spill. */
+  spill: (addr: Addr) => Range | null;
   /** A random number in [0, 1), the same for the same seed, cell and call. */
   rand: () => number;
 };
@@ -862,7 +870,10 @@ function rangeMatrix(range: Range, ctx: Ctx): Matrix {
 function evalArg(node: Node, ctx: Ctx): Arg {
   // A reference is a range to a function, even a single cell: SUM(A1) skips text in A1.
   const ref =
-    node.type === "ref" || node.type === "range" || (node.type === "name" && ctx.name(node.name) !== null);
+    node.type === "ref" ||
+    node.type === "range" ||
+    node.type === "spill" ||
+    (node.type === "name" && ctx.name(node.name) !== null);
   const result = node.type === "ref" ? [[ctx.cell(node.addr)]] : evalNode(node, ctx);
   if (!isMatrix(result)) {
     return { kind: "scalar", value: result };
@@ -1350,6 +1361,10 @@ function evalNode(node: Node, ctx: Ctx): Result {
         ? ctx.cell({ col: range.c1, row: range.r1 })
         : rangeMatrix(range, ctx);
     }
+    case "spill": {
+      const range = ctx.spill(node.addr);
+      return range ? rangeMatrix(range, ctx) : err("#REF!");
+    }
     case "call":
       return callFunction(node.name, node.args, ctx);
     case "unary":
@@ -1485,6 +1500,11 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
   const ctx: Ctx = {
     cell: (addr) => cell(addr),
     name: (upper) => nameRanges.get(upper) ?? null,
+    spill: (addr) => {
+      // Work out the anchor first, so its spill is in place.
+      cell(addr);
+      return out.spills[addrName(addr)] ?? null;
+    },
     rand: () => {
       let next = streams.get(current);
       if (!next) {

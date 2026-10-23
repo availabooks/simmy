@@ -350,3 +350,80 @@ describe("Go To", () => {
     expect(s.dialog()).toBeNull();
   });
 });
+
+describe("the name dialogs", () => {
+  /** Click a dialog button by its text, in the top dialog. */
+  const click = (s: Awaited<ReturnType<typeof sheet>>, text: string) => {
+    const dialogs = s.grid.getRootNode() as ShadowRoot;
+    const all = [...dialogs.querySelectorAll(".xd-dialog")];
+    const top = all[all.length - 1];
+    [...top.querySelectorAll("button")].find((b) => b.textContent?.trim() === text)?.click();
+  };
+  const topDialog = (s: Awaited<ReturnType<typeof sheet>>) => {
+    const all = [...(s.grid.getRootNode() as ShadowRoot).querySelectorAll(".xd-dialog")];
+    return all[all.length - 1] ?? null;
+  };
+
+  it("defines a name with New Name from the Name Manager (Ctrl+F3)", async () => {
+    const s = await sheet();
+    s.goTo("C3");
+    s.press("F3", false, true);
+    expect(topDialog(s)?.getAttribute("aria-label")).toBe("Name Manager");
+    click(s, "New…");
+    expect(topDialog(s)?.getAttribute("aria-label")).toBe("New Name");
+    // The label to the left, "Tax Rate", is suggested as Tax_Rate.
+    const name = topDialog(s)?.querySelector("input") as HTMLInputElement;
+    expect(name.value).toBe("Tax_Rate");
+    click(s, "OK");
+    expect(topDialog(s)?.getAttribute("aria-label")).toBe("Name Manager");
+    // A sheet name with a space is quoted, as Excel writes it.
+    expect(topDialog(s)?.textContent).toContain("='Referencing Cells'!$C$3");
+    click(s, "Close");
+    s.goTo("A1");
+    s.goTo("tax_rate");
+    expect(s.active()).toBe("Tax_Rate");
+  });
+
+  it("creates names from a table's labels (Ctrl+Shift+F3)", async () => {
+    const s = await sheet();
+    s.goTo("B5:C12");
+    s.press("F3", true, true);
+    const boxes = [...(topDialog(s)?.querySelectorAll<HTMLInputElement>("input[type=checkbox]") ?? [])];
+    expect(boxes.map((box) => box.checked)).toEqual([true, true, false, false]);
+    click(s, "OK");
+    s.goTo("Price");
+    expect(s.active()).toBe("Price");
+    s.goTo("Pool");
+    expect(s.active()).toBe("Pool");
+  });
+
+  it("renames with Edit and deletes after asking", async () => {
+    const s = await sheet();
+    s.goTo("C2");
+    s.goTo("Rate");
+    s.press("F3", false, true);
+    click(s, "Edit…");
+    const name = topDialog(s)?.querySelector("input") as HTMLInputElement;
+    name.value = "Discount";
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+    click(s, "OK");
+    expect(topDialog(s)?.textContent).toContain("Discount");
+    expect(topDialog(s)?.textContent).not.toContain("Rate");
+    click(s, "Delete");
+    expect(topDialog(s)?.textContent).toContain("Are you sure you want to delete the name Discount?");
+    click(s, "OK");
+    expect(topDialog(s)?.querySelectorAll(".xd-table-row:not(.is-head)").length).toBe(0);
+  });
+
+  it("pastes a name into the formula being typed (F3)", async () => {
+    const s = await sheet();
+    s.goTo("C2");
+    s.goTo("Rate");
+    s.goTo("H8");
+    s.type("=100*");
+    s.press("F3");
+    expect(topDialog(s)?.getAttribute("aria-label")).toBe("Paste Name");
+    click(s, "OK");
+    expect(s.editor()?.value).toBe("=100*Rate");
+  });
+});

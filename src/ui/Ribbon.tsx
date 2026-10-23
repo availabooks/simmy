@@ -60,6 +60,15 @@ export type RibbonProps = {
   onCalculateNow: () => void;
   /** Home › Find & Select › Go To. */
   onGoTo: () => void;
+  /** The defined names, for Use in Formula. */
+  names: string[];
+  /** A cell is being edited: Excel turns off the name commands that change names. */
+  editing: boolean;
+  onNameManager: () => void;
+  onDefineName: () => void;
+  onCreateFromSelection: () => void;
+  onUseInFormula: (name: string) => void;
+  onPasteNames: () => void;
 };
 
 /** The tab row. `tab` is null while the ribbon is collapsed, so no tab shows as selected. */
@@ -469,7 +478,80 @@ function FormulaGroups(props: RibbonProps) {
         />
       </Group>
       <Group label="Defined Names" collapsible>
-        <BigButton label="Name Manager" icon={book("N", "#616161")} />
+        <BigButton
+          label="Name Manager"
+          title="Name Manager (Ctrl+F3)"
+          icon={book("N", "#616161")}
+          onClick={props.editing ? undefined : props.onNameManager}
+        />
+        <div class="xd-stack">
+          <SmallButton
+            title="Define Name"
+            label="Define Name"
+            onClick={props.editing ? undefined : props.onDefineName}
+          >
+            <Svg>
+              <path d="M3 6h10l3 4-3 4H3z" fill="#fff" stroke="#616161" />
+            </Svg>
+          </SmallButton>
+          <Menu
+            trigger={(open, toggle) => (
+              <SmallButton
+                title="Use in Formula"
+                label="Use in Formula"
+                dropdown
+                active={open}
+                onClick={toggle}
+              >
+                <Svg>
+                  <text x="2" y="15" font-size="11" font-style="italic" fill="#262626">
+                    fx
+                  </text>
+                </Svg>
+              </SmallButton>
+            )}
+          >
+            {(close) => (
+              <>
+                {props.names.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    class="xd-menu-item"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      close();
+                      props.onUseInFormula(name);
+                    }}
+                  >
+                    {name}
+                  </button>
+                ))}
+                <MenuItem
+                  label="Paste Names…"
+                  onClick={
+                    props.names.length > 0
+                      ? () => {
+                          close();
+                          props.onPasteNames();
+                        }
+                      : undefined
+                  }
+                />
+              </>
+            )}
+          </Menu>
+          <SmallButton
+            title="Create from Selection (Ctrl+Shift+F3)"
+            label="Create from Selection"
+            onClick={props.editing ? undefined : props.onCreateFromSelection}
+          >
+            <Svg>
+              <rect x="3" y="4" width="14" height="12" fill="#fff" stroke="#616161" />
+              <path d="M3 8h14M7 4v12" stroke="#217346" />
+            </Svg>
+          </SmallButton>
+        </div>
       </Group>
       <Group label="Formula Auditing" collapsible>
         <div class="xd-stack">
@@ -494,14 +576,18 @@ function FormulaGroups(props: RibbonProps) {
       </Group>
       <Group label="Calculation" collapsible>
         <BigButton label="Calculation Options" dropdown icon={book("=", "#217346")} />
-        <div class="xd-stack">
+        <div class="xd-stack is-shrinkable">
           <SmallButton title="Calculate Now (F9)" label="Calculate Now" onClick={props.onCalculateNow}>
             <Svg>
               <rect x="4" y="3" width="12" height="14" rx="1" fill="#fff" stroke="#616161" />
               <path d="M7 7h6M7 10h6M7 13h3" stroke="#217346" />
             </Svg>
           </SmallButton>
-          <SmallButton title="Calculate Sheet (Shift+F9)" label="Calculate Sheet" onClick={props.onCalculateNow}>
+          <SmallButton
+            title="Calculate Sheet (Shift+F9)"
+            label="Calculate Sheet"
+            onClick={props.onCalculateNow}
+          >
             <Svg>
               <rect x="3" y="4" width="14" height="12" fill="#fff" stroke="#616161" />
               <path d="M3 8h14M8 4v12" stroke="#217346" />
@@ -542,7 +628,9 @@ function FunctionMenu({
 }) {
   return (
     <Menu
-      trigger={(open, toggle) => <BigButton label={label} dropdown active={open} onClick={toggle} icon={icon} />}
+      trigger={(open, toggle) => (
+        <BigButton label={label} dropdown active={open} onClick={toggle} icon={icon} />
+      )}
     >
       {(close) =>
         sections.map((section) => (

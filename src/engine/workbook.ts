@@ -7,6 +7,8 @@ import type { Inputs, Names } from "./sheet.ts";
 export type WorkbookState = {
   inputs: Inputs;
   names: Names;
+  /** Comments on defined names (up to 255 characters), shown in the Name Manager. */
+  nameComments?: Record<string, string>;
   /**
    * Picks RANDBETWEEN's numbers. It changes with every change to the cells (and with
    * Calculate Now), the way Excel recalculates, so the same state always shows the same numbers.
@@ -16,8 +18,15 @@ export type WorkbookState = {
   selection?: string;
 };
 
-/** A change to the workbook. A cell set to "" is cleared; a name set to null is deleted. */
-export type Change = { cells?: Inputs; names?: Record<string, string | null> };
+/**
+ * A change to the workbook. A cell set to "" is cleared; a name set to null is deleted, along
+ * with its comment. A comment set to "" is removed.
+ */
+export type Change = {
+  cells?: Inputs;
+  names?: Record<string, string | null>;
+  nameComments?: Record<string, string>;
+};
 
 export function applyChange(state: WorkbookState, change: Change): WorkbookState {
   let { inputs, names, seed } = state;
@@ -32,21 +41,41 @@ export function applyChange(state: WorkbookState, change: Change): WorkbookState
     }
     seed = nextSeed(seed);
   }
+  let nameComments = state.nameComments;
+  // Names match without regard to case, so defining one replaces any spelled differently.
+  const without = (map: Record<string, string>, name: string) => {
+    for (const key of Object.keys(map)) {
+      if (key.toUpperCase() === name.toUpperCase()) {
+        delete map[key];
+      }
+    }
+  };
   if (change.names) {
     names = { ...names };
+    nameComments = { ...nameComments };
     for (const [name, ref] of Object.entries(change.names)) {
-      // Names match without regard to case, so redefining one replaces it.
-      for (const key of Object.keys(names)) {
-        if (key.toUpperCase() === name.toUpperCase()) {
-          delete names[key];
-        }
-      }
+      const upper = name.toUpperCase();
+      const comment = Object.entries(nameComments).find(([key]) => key.toUpperCase() === upper);
+      without(names, name);
+      without(nameComments, name);
       if (ref !== null) {
         names[name] = ref;
+        if (comment) {
+          nameComments[name] = comment[1];
+        }
       }
     }
   }
-  return { ...state, inputs, names, seed };
+  if (change.nameComments) {
+    nameComments = { ...nameComments };
+    for (const [name, comment] of Object.entries(change.nameComments)) {
+      without(nameComments, name);
+      if (comment !== "") {
+        nameComments[name] = comment;
+      }
+    }
+  }
+  return { ...state, inputs, names, nameComments, seed };
 }
 
 /** The seed after a recalculation. */

@@ -1592,6 +1592,13 @@ button:focus-visible {
   background: none;
 }
 
+/* As Excel does on a narrower window, some small buttons drop their labels before groups go. */
+@container (max-width: 1500px) {
+  .xd-stack.is-shrinkable .xd-small-label {
+    display: none;
+  }
+}
+
 @container (max-width: 1320px) {
   .xd-group.is-collapsible {
     display: none;
@@ -2392,6 +2399,64 @@ textarea.xd-field {
   height: 48px;
   padding: 4px 6px;
   resize: none;
+}
+
+.xd-field-row.is-top {
+  align-items: flex-start;
+}
+
+.xd-field-row.is-top > span {
+  padding-top: 4px;
+}
+
+.xd-dialog-message {
+  margin: 4px 0;
+}
+
+.xd-dialog-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.xd-dialog-spacer {
+  flex: 1;
+}
+
+/* The Name Manager's list: a header and one row per name. */
+.xd-table {
+  height: 180px;
+  border: 1px solid #8a8a8a;
+  overflow: auto;
+}
+
+.xd-table-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.3fr 1.4fr 0.8fr 1fr;
+  user-select: none;
+}
+
+.xd-table-row > span {
+  padding: 2px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xd-table-row.is-head {
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid #d6d6d6;
+  background: #f3f3f3;
+}
+
+.xd-table-row.is-on {
+  background: #0067c0;
+  color: #fff;
+}
+
+.xd-table-row:focus-visible {
+  outline: 1px dotted #262626;
+  outline-offset: -1px;
 }
 
 .xd-check {

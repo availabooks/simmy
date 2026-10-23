@@ -27,11 +27,27 @@ import {
   suggestFunctions,
   type Value,
 } from "../engine/sheet.ts";
-import { absoluteRef, lookupName, nameForRange, nameProblem, nameRange } from "../engine/names.ts";
+import {
+  absoluteRef,
+  guessLabelSides,
+  lookupName,
+  nameForRange,
+  nameProblem,
+  nameRange,
+  namesFromSelection,
+  refersToText,
+  suggestName,
+} from "../engine/names.ts";
 import { applyChange, type Change, nextSeed, type WorkbookState } from "../engine/workbook.ts";
 import { initialState } from "../module/grade.ts";
 import { Menu } from "./Menu.tsx";
-import { GoToDialog } from "./NameDialogs.tsx";
+import {
+  CreateNamesDialog,
+  DefineNameDialog,
+  GoToDialog,
+  NameManagerDialog,
+  PasteNameDialog,
+} from "./NameDialogs.tsx";
 import type { CellStyle, SimModule } from "../module/types.ts";
 import type { WorkbookApi } from "./autopilot.ts";
 import { useSim } from "./context.ts";
@@ -51,7 +67,12 @@ type Selection = { anchor: Addr; focus: Addr };
 /** An entry in the formula autocomplete list: a function (inserted with its "(") or a defined name. */
 type Suggestion = { name: string; summary: string; call: boolean };
 /** An open dialog. Dialogs stack: Name Manager can open New Name over itself. */
-type DialogState = { kind: "goto" };
+type DialogState =
+  | { kind: "goto" }
+  | { kind: "define"; editing?: string }
+  | { kind: "create" }
+  | { kind: "manager" }
+  | { kind: "paste" };
 /** Excel's message box. `formula` adds its note about formulas; `from` is where focus goes back. */
 type Alert = { message: string; formula?: boolean; from: "editor" | "namebox" };
 type Point = { start: number; end: number; anchor: Addr; focus: Addr };
@@ -163,7 +184,11 @@ export function Workbook(props: WorkbookProps) {
   const openDialog = (dialog: DialogState) => setDialogs((open) => [...open, dialog]);
   const closeDialog = () => {
     setDialogs((open) => open.slice(0, -1));
-    focusGrid();
+    // Back to the formula being typed, if a dialog (Paste Name) opened over one.
+    const editor = editRef.current?.origin === "bar" ? barRef.current : cellEditorRef.current;
+    window.requestAnimationFrame(() => {
+      (editRef.current ? editor : scrollRef.current)?.focus({ preventScroll: true });
+    });
   };
   const [paneOpen, setPaneOpen] = useState(true);
   const [tab, setTab] = useState<RibbonTab>("Home");
@@ -774,6 +799,10 @@ export function Workbook(props: WorkbookProps) {
       } else if (lower === "g") {
         handled();
         openDialog({ kind: "goto" });
+      } else if (key === "F3") {
+        // Ctrl+F3 is the Name Manager; Ctrl+Shift+F3 is Create from Selection.
+        handled();
+        openDialog({ kind: event.shiftKey ? "create" : "manager" });
       }
       return;
     }
@@ -810,6 +839,13 @@ export function Workbook(props: WorkbookProps) {
       case "F2":
         handled();
         startEdit(inputs[addrName(active)] ?? "", "edit");
+        return;
+      case "F3":
+        // Paste Name, when there are names to paste.
+        handled();
+        if (Object.keys(names).length > 0) {
+          openDialog({ kind: "paste" });
+        }
         return;
       case "F5":
         // Go To, and not the browser's reload.
@@ -849,6 +885,13 @@ export function Workbook(props: WorkbookProps) {
       return;
     }
     const key = event.key;
+    if (key === "F3" && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      if (Object.keys(names).length > 0) {
+        openDialog({ kind: "paste" });
+      }
+      return;
+    }
     if (key === "F4") {
       // Step the reference at the caret (or the selected ones) through $A$1, A$1 and $A1.
       const input = event.currentTarget;
@@ -980,6 +1023,32 @@ export function Workbook(props: WorkbookProps) {
       return;
     }
     goTo(ref);
+  };
+
+  /**
+   * The Name Manager's Value column: a cell's value, or for several cells Excel's array form,
+   * {"a",1;"b",2}, cut short when it runs long.
+   */
+  const nameValue = (ref: string): string => {
+    const range = nameRange(ref);
+    if (!range) {
+      return "";
+    }
+    const show = (value: Value | undefined) =>
+      typeof value === "string" ? `"${value}"` : formatValue(value ?? null, "General", 200);
+    if (range.c1 === range.c2 && range.r1 === range.r2) {
+      return formatValue(values[addrName({ col: range.c1, row: range.r1 })] ?? null, "General", 200);
+    }
+    const rows = [];
+    for (let row = range.r1; row <= range.r2; row++) {
+      const line = [];
+      for (let col = range.c1; col <= range.c2; col++) {
+        line.push(show(values[addrName({ col, row })]));
+      }
+      rows.push(line.join(","));
+    }
+    const text = `{${rows.join(";")}}`;
+    return text.length > 60 ? `${text.slice(0, 59)}…` : text;
   };
 
   /* ------------------------------------------------------------- render */
@@ -1175,6 +1244,13 @@ export function Workbook(props: WorkbookProps) {
             onFillDown={command(() => fill("down"))}
             onCalculateNow={command(recalculate)}
             onGoTo={command(() => openDialog({ kind: "goto" }))}
+            names={Object.keys(names)}
+            editing={edit !== null}
+            onNameManager={command(() => openDialog({ kind: "manager" }))}
+            onDefineName={command(() => openDialog({ kind: "define" }))}
+            onCreateFromSelection={command(() => openDialog({ kind: "create" }))}
+            onUseInFormula={(name) => insertAtCaret(name)}
+            onPasteNames={() => openDialog({ kind: "paste" })}
           />
         )}
       </div>
@@ -1492,6 +1568,70 @@ export function Workbook(props: WorkbookProps) {
       </div>
       {dialogs.map((dialog, i) => (
         <div key={i} class="xd-dialog-layer" inert={i < dialogs.length - 1}>
+          {dialog.kind === "define" && (
+            <DefineNameDialog
+              title={dialog.editing ? "Edit Name" : "New Name"}
+              initial={
+                dialog.editing
+                  ? {
+                      name: dialog.editing,
+                      ref: refersToText(nameRange(names[dialog.editing] ?? "") ?? selRange, mod.workbook.sheet),
+                      comment: book.state.nameComments?.[dialog.editing] ?? "",
+                    }
+                  : {
+                      name: suggestName(inputs, selRange),
+                      ref: refersToText(selRange, mod.workbook.sheet),
+                      comment: "",
+                    }
+              }
+              names={names}
+              editing={dialog.editing}
+              sheet={mod.workbook.sheet}
+              onCancel={closeDialog}
+              onSave={(entry) => {
+                const old = dialog.editing;
+                const renamed = old && old !== entry.name ? { [old]: null } : {};
+                // Close first: the dialog mustn't render again for a name that's gone.
+                closeDialog();
+                apply({
+                  names: { ...renamed, [entry.name]: entry.ref },
+                  nameComments: { [entry.name]: entry.comment },
+                });
+              }}
+            />
+          )}
+          {dialog.kind === "create" && (
+            <CreateNamesDialog
+              initial={guessLabelSides(inputs, selRange)}
+              onCancel={closeDialog}
+              onCreate={(sides) => {
+                closeDialog();
+                apply({ names: namesFromSelection(inputs, selRange, sides) });
+              }}
+            />
+          )}
+          {dialog.kind === "manager" && (
+            <NameManagerDialog
+              names={names}
+              comments={book.state.nameComments ?? {}}
+              valueOf={nameValue}
+              sheet={mod.workbook.sheet}
+              onNew={() => openDialog({ kind: "define" })}
+              onEdit={(name) => openDialog({ kind: "define", editing: name })}
+              onDelete={(name) => apply({ names: { [name]: null } })}
+              onClose={closeDialog}
+            />
+          )}
+          {dialog.kind === "paste" && (
+            <PasteNameDialog
+              names={names}
+              onCancel={closeDialog}
+              onPaste={(name) => {
+                closeDialog();
+                insertAtCaret(name);
+              }}
+            />
+          )}
           {dialog.kind === "goto" && (
             <GoToDialog
               names={names}

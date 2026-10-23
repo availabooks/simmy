@@ -1614,13 +1614,41 @@ button:focus-visible {
 }
 
 .xd-namebox {
+  position: relative;
   display: flex;
   align-items: center;
   width: 100px;
   height: 22px;
-  padding-right: 4px;
+  padding-right: 2px;
   border: 1px solid #c4c4c4;
   border-radius: 3px;
+}
+
+/* The arrow lists the defined names, in a menu as wide as the box and under its left edge. */
+.xd-namebox .xd-menu-wrap {
+  position: static;
+}
+
+.xd-namebox .xd-menu {
+  left: -1px;
+  min-width: calc(100% + 2px);
+}
+
+.xd-namebox-arrow {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  cursor: pointer;
+}
+
+.xd-namebox-arrow:hover,
+.xd-namebox-arrow.is-on {
+  background: #e6e6e6;
 }
 
 .xd-namebox input {

@@ -13,7 +13,6 @@ import {
   formatValue,
   formulaRanges,
   FUNCTIONS,
-  type FunctionInfo,
   type Inputs,
   inRange,
   isError,
@@ -28,8 +27,10 @@ import {
   suggestFunctions,
   type Value,
 } from "../engine/sheet.ts";
+import { absoluteRef, lookupName, nameForRange, nameProblem, nameRange } from "../engine/names.ts";
 import { applyChange, type Change, nextSeed, type WorkbookState } from "../engine/workbook.ts";
 import { initialState } from "../module/grade.ts";
+import { Menu } from "./Menu.tsx";
 import type { CellStyle, SimModule } from "../module/types.ts";
 import type { WorkbookApi } from "./autopilot.ts";
 import { useSim } from "./context.ts";
@@ -46,6 +47,10 @@ const POINTABLE = /[=(,+\-*/^&<>:]\s*$/;
 const SIGNATURES: Record<string, string> = Object.fromEntries(FUNCTIONS.map((fn) => [fn.name, fn.args]));
 
 type Selection = { anchor: Addr; focus: Addr };
+/** An entry in the formula autocomplete list: a function (inserted with its "(") or a defined name. */
+type Suggestion = { name: string; summary: string; call: boolean };
+/** Excel's message box. `formula` adds its note about formulas; `from` is where focus goes back. */
+type Alert = { message: string; formula?: boolean; from: "editor" | "namebox" };
 type Point = { start: number; end: number; anchor: Addr; focus: Addr };
 type Edit = { addr: Addr; text: string; mode: "enter" | "edit"; origin: "cell" | "bar"; point: Point | null };
 /** The workbook, with the states Undo and Redo go back and forth through. */
@@ -114,7 +119,7 @@ function typedFunctionPrefix(text: string, caret: number): string | null {
   if (!text.startsWith("=")) {
     return null;
   }
-  const match = /(^=|[=(,+\-*/^&<>:\s])([A-Za-z][A-Za-z0-9.]*)$/.exec(text.slice(0, caret));
+  const match = /(^=|[=(,+\-*/^&<>:\s])([A-Za-z_\\][A-Za-z0-9._]*)$/.exec(text.slice(0, caret));
   return match ? match[2] : null;
 }
 
@@ -150,7 +155,7 @@ export function Workbook(props: WorkbookProps) {
   const [edit, setEdit] = useState<Edit | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
   const [fillTarget, setFillTarget] = useState<Range | null>(null);
-  const [alert, setAlert] = useState<string | null>(null);
+  const [alert, setAlert] = useState<Alert | null>(null);
   const [paneOpen, setPaneOpen] = useState(true);
   const [tab, setTab] = useState<RibbonTab>("Home");
   const [ribbonCollapsed, setRibbonCollapsed] = useState(props.ribbonCollapsed ?? false);
@@ -166,6 +171,7 @@ export function Workbook(props: WorkbookProps) {
   const cellEditorRef = useRef<HTMLInputElement>(null);
   const barRef = useRef<HTMLInputElement>(null);
   const alertOkRef = useRef<HTMLButtonElement>(null);
+  const nameBoxRef = useRef<HTMLInputElement>(null);
   const drag = useRef<Drag>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const editRef = useRef<Edit | null>(null);
@@ -286,9 +292,20 @@ export function Workbook(props: WorkbookProps) {
   }, [alert]);
 
   const dismissAlert = () => {
+    const from = alert?.from;
     setAlert(null);
-    const input = editRef.current?.origin === "bar" ? barRef.current : cellEditorRef.current;
-    window.requestAnimationFrame(() => input?.focus({ preventScroll: true }));
+    const input =
+      from === "namebox"
+        ? nameBoxRef.current
+        : editRef.current?.origin === "bar"
+          ? barRef.current
+          : cellEditorRef.current;
+    window.requestAnimationFrame(() => {
+      input?.focus({ preventScroll: true });
+      if (from === "namebox") {
+        input?.select();
+      }
+    });
   };
 
   /** Commit the edit. Returns false when Excel would refuse the formula. */
@@ -302,7 +319,7 @@ export function Workbook(props: WorkbookProps) {
       try {
         checkFormula(text);
       } catch {
-        setAlert("There's a problem with this formula.");
+        setAlert({ message: "There's a problem with this formula.", formula: true, from: "editor" });
         return false;
       }
     }
@@ -397,22 +414,28 @@ export function Workbook(props: WorkbookProps) {
     return caret === current.text.length && POINTABLE.test(current.text.slice(0, caret));
   };
 
-  const insertFunction = (fn: string) => {
+  /**
+   * Put a function call or a name into the formula at the caret, in place of what's been typed
+   * of it, or start a formula with it.
+   */
+  const insertAtCaret = (text: string) => {
     const current = editRef.current;
     if (current && current.text.startsWith("=")) {
       const prefix = typedFunctionPrefix(current.text, caret);
       const start = prefix ? caret - prefix.length : caret;
-      const text = `${current.text.slice(0, start)}${fn}(${current.text.slice(caret)}`;
-      setEditText(text, start + fn.length + 1);
+      const end = start + text.length;
+      setEditText(`${current.text.slice(0, start)}${text}${current.text.slice(caret)}`, end);
       const input = current.origin === "cell" ? cellEditorRef.current : barRef.current;
       window.requestAnimationFrame(() => {
         input?.focus({ preventScroll: true });
-        input?.setSelectionRange(start + fn.length + 1, start + fn.length + 1);
+        input?.setSelectionRange(end, end);
       });
       return;
     }
-    startEdit(`=${fn}(`, "enter");
+    startEdit(`=${text}`, "enter");
   };
+  const insertFunction = (fn: string) => insertAtCaret(`${fn}(`);
+  const insertSuggestion = (item: Suggestion) => insertAtCaret(item.call ? `${item.name}(` : item.name);
 
   /* -------------------------------------------------------- autopilot api */
 
@@ -792,8 +815,14 @@ export function Workbook(props: WorkbookProps) {
     }
   };
 
-  const suggestions: FunctionInfo[] = edit
-    ? suggestFunctions(typedFunctionPrefix(edit.text, caret) ?? "")
+  const prefix = edit ? (typedFunctionPrefix(edit.text, caret) ?? "") : "";
+  const suggestions: Suggestion[] = prefix
+    ? [
+        ...suggestFunctions(prefix).map((fn) => ({ name: fn.name, summary: fn.summary, call: true })),
+        ...Object.keys(names)
+          .filter((name) => name.toUpperCase().startsWith(prefix.toUpperCase()))
+          .map((name) => ({ name, summary: `Defined name: ${names[name]}`, call: false })),
+      ].sort((a, b) => a.name.localeCompare(b.name))
     : [];
   const callName = edit && suggestions.length === 0 ? activeCall(edit.text, caret) : null;
 
@@ -828,7 +857,7 @@ export function Workbook(props: WorkbookProps) {
       }
       if (key === "Tab") {
         event.preventDefault();
-        insertFunction(suggestions[Math.min(suggest, suggestions.length - 1)].name);
+        insertSuggestion(suggestions[Math.min(suggest, suggestions.length - 1)]);
         return;
       }
     }
@@ -880,17 +909,53 @@ export function Workbook(props: WorkbookProps) {
   /* ------------------------------------------------------ name box / bar */
 
   const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const selectRange = (range: Range) => {
+    const start = clampAddr({ col: range.c1, row: range.r1 });
+    const end = clampAddr({ col: range.c2, row: range.r2 });
+    setSel({ anchor: start, focus: end });
+    ensureVisible(end);
+    ensureVisible(start);
+  };
+
+  /** The range a reference, a spill (A1#) or a defined name stands for, or null. */
+  const resolveReference = (text: string): Range | null => {
+    const trimmed = text.trim();
+    const spill = /^(\$?[A-Za-z]{1,3}\$?\d{1,7})#$/.exec(trimmed);
+    if (spill) {
+      const anchor = parseAddr(spill[1]);
+      return anchor ? (sheetEval.spills[addrName(anchor)] ?? null) : null;
+    }
+    const named = lookupName(names, trimmed);
+    return named ? nameRange(named.ref) : parseRange(trimmed.toUpperCase());
+  };
+
   const goTo = (text: string) => {
-    const range = parseRange(text.toUpperCase());
+    const range = resolveReference(text);
     if (range) {
-      const start = clampAddr({ col: range.c1, row: range.r1 });
-      const end = clampAddr({ col: range.c2, row: range.r2 });
-      setSel({ anchor: start, focus: end });
-      ensureVisible(end);
-      ensureVisible(start);
+      selectRange(range);
     }
     setNameDraft(null);
     focusGrid();
+  };
+
+  /** Enter in the Name Box: go to a reference or a name, or give the selection a new name. */
+  const nameBoxEnter = (text: string) => {
+    const trimmed = text.trim();
+    const range = resolveReference(trimmed);
+    if (range) {
+      goTo(trimmed);
+      return;
+    }
+    if (nameProblem(trimmed) === null) {
+      apply({ names: { [trimmed]: absoluteRef(selRange) } });
+      setNameDraft(null);
+      focusGrid();
+      return;
+    }
+    setAlert({
+      message: "You must enter a valid reference you want to go to, or type a valid name for the selection.",
+      from: "namebox",
+    });
   };
 
   const selectFromPane = (ref: string) => {
@@ -1098,12 +1163,13 @@ export function Workbook(props: WorkbookProps) {
       <div class="xd-formula-bar">
         <div class="xd-namebox">
           <input
+            ref={nameBoxRef}
             aria-label="Name Box"
             value={
               nameDraft ??
               (selecting && stats
                 ? `${selRange.r2 - selRange.r1 + 1}R x ${selRange.c2 - selRange.c1 + 1}C`
-                : activeKey)
+                : (nameForRange(names, selRange) ?? activeKey))
             }
             onFocus={(event) => {
               setNameDraft(event.currentTarget.value);
@@ -1114,16 +1180,46 @@ export function Workbook(props: WorkbookProps) {
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
-                goTo(event.currentTarget.value);
+                nameBoxEnter(event.currentTarget.value);
               } else if (event.key === "Escape") {
                 setNameDraft(null);
                 focusGrid();
               }
             }}
           />
-          <Svg w={12}>
-            <path d="M5 8l5 5 5-5" fill="none" stroke="#616161" stroke-width="1.6" />
-          </Svg>
+          <Menu
+            trigger={(open, toggle) => (
+              <button
+                type="button"
+                class={`xd-namebox-arrow${open ? " is-on" : ""}`}
+                title="Name Box"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={toggle}
+              >
+                <Svg w={12}>
+                  <path d="M5 8l5 5 5-5" fill="none" stroke="#616161" stroke-width="1.6" />
+                </Svg>
+              </button>
+            )}
+          >
+            {(close) =>
+              Object.keys(names)
+                .sort((a, b) => a.localeCompare(b))
+                .map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    class="xd-menu-item"
+                    onClick={() => {
+                      close();
+                      goTo(name);
+                    }}
+                  >
+                    {name}
+                  </button>
+                ))
+            }
+          </Menu>
         </div>
         <span class="xd-fb-dots">⋮</span>
         <button
@@ -1289,9 +1385,9 @@ export function Workbook(props: WorkbookProps) {
                               type="button"
                               class={i === suggest ? "is-on" : ""}
                               onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => insertFunction(fn.name)}
+                              onClick={() => insertSuggestion(fn)}
                             >
-                              <span class="xd-fn-icon">ƒ</span>
+                              <span class="xd-fn-icon">{fn.call ? "ƒ" : "▭"}</span>
                               {fn.name}
                             </button>
                           </li>
@@ -1383,11 +1479,13 @@ export function Workbook(props: WorkbookProps) {
             <div class="xd-alert-body">
               <span class="xd-alert-icon">!</span>
               <div>
-                <p>{alert}</p>
-                <p class="xd-alert-help">
-                  Not trying to type a formula? When the first character is an equal (=) or minus (-) sign,
-                  Excel thinks it's a formula.
-                </p>
+                <p>{alert.message}</p>
+                {alert.formula && (
+                  <p class="xd-alert-help">
+                    Not trying to type a formula? When the first character is an equal (=) or minus (-) sign,
+                    Excel thinks it's a formula.
+                  </p>
+                )}
               </div>
             </div>
             <div class="xd-alert-actions">

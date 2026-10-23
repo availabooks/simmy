@@ -45,8 +45,15 @@ async function sheet() {
    * Press a key where the focus would be: the cell editor while typing, else the grid. Like a
    * browser, a character that no listener cancels goes into the editor at its cursor.
    */
-  const press = (key: string, shiftKey = false) => {
-    const event = new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true, composed: true });
+  const press = (key: string, shiftKey = false, ctrlKey = false) => {
+    const event = new KeyboardEvent("keydown", {
+      key,
+      shiftKey,
+      ctrlKey,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    });
     const input = editor();
     (input ?? grid).dispatchEvent(event);
     if (input && key.length === 1 && !event.defaultPrevented) {
@@ -71,7 +78,9 @@ async function sheet() {
     const line = shadow.querySelectorAll(".xd-row-line")[row];
     return line?.querySelectorAll(".xd-cell")[col]?.textContent ?? "";
   };
-  return { press, type, goTo, editor, cellText, active: () => nameBox.value };
+  const alert = () => shadow.querySelector(".xd-alert")?.textContent ?? null;
+  const suggestions = () => [...shadow.querySelectorAll(".xd-suggest li")].map((li) => li.textContent);
+  return { press, type, goTo, editor, cellText, alert, suggestions, active: () => nameBox.value };
 }
 
 describe("keyboard movement", () => {
@@ -226,5 +235,46 @@ describe("Calculate Now (F9)", () => {
     expect(cell()).toBe(first);
     s.press("F9");
     expect(cell()).not.toBe(first);
+  });
+});
+
+describe("the Name Box", () => {
+  it("names the selection, then shows the name and goes to it", async () => {
+    const s = await sheet();
+    s.goTo("C2");
+    s.goTo("Rate");
+    expect(s.active()).toBe("Rate");
+    s.goTo("H8");
+    expect(s.active()).toBe("H8");
+    s.goTo("rate");
+    expect(s.active()).toBe("Rate");
+  });
+
+  it("lets formulas use the name, suggesting it as it's typed", async () => {
+    const s = await sheet();
+    s.goTo("C2");
+    s.goTo("Rate");
+    s.goTo("H8");
+    s.type("=Ra");
+    expect(s.suggestions()).toContain("▭Rate");
+    s.type("te*100");
+    s.press("Enter");
+    // C2 holds the 30% discount.
+    expect(s.cellText("H8")).toBe("30");
+  });
+
+  it("refuses an entry that is neither a reference nor a valid name", async () => {
+    const s = await sheet();
+    s.goTo("Tax Rate");
+    expect(s.alert()).toContain("You must enter a valid reference you want to go to");
+  });
+
+  it("can undo naming", async () => {
+    const s = await sheet();
+    s.goTo("C2");
+    s.goTo("Rate");
+    s.press("z", false, true);
+    s.goTo("C2");
+    expect(s.active()).toBe("C2");
   });
 });

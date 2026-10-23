@@ -7,7 +7,7 @@ import {
   type Clip,
   colName,
   copyRange,
-  evaluateSheet,
+  evaluateBook,
   fillWrites,
   formatValue,
   formulaRanges,
@@ -179,7 +179,11 @@ export function Workbook(props: WorkbookProps) {
   const editRef = useRef<Edit | null>(null);
   editRef.current = edit;
 
-  const values = useMemo(() => evaluateSheet(book.inputs), [book.inputs]);
+  const sheetEval = useMemo(
+    () => evaluateBook(book.inputs, { bounds: { rows: rowCount, cols } }),
+    [book.inputs, rowCount, cols],
+  );
+  const { values } = sheetEval;
   const selRange = normalizeRange(sel.anchor, sel.focus);
   const active = sel.anchor;
 
@@ -884,7 +888,13 @@ export function Workbook(props: WorkbookProps) {
 
   const refRanges = edit ? formulaRanges(edit.text) : [];
   const activeKey = addrName(active);
-  const barText = edit ? edit.text : (book.inputs[activeKey] ?? "");
+  // A cell filled by a spill shows its anchor's formula, greyed, as Excel does.
+  const spillAnchor = sheetEval.owner[activeKey];
+  const barText = edit ? edit.text : (book.inputs[activeKey] ?? (spillAnchor ? book.inputs[spillAnchor] : ""));
+  const ghost = !edit && spillAnchor !== undefined;
+  // The active cell's spill: its range while it fills, or where it would go while blocked.
+  const spillRange = sheetEval.spills[spillAnchor ?? activeKey];
+  const blockedRange = sheetEval.blocked[activeKey];
   const mode = alert
     ? "Ready"
     : edit
@@ -952,7 +962,7 @@ export function Workbook(props: WorkbookProps) {
       const selected = inRange(selRange, addr) && !(col === active.col && row === active.row);
       // Text runs into the next cell only when that cell is empty, as in Excel.
       const next = values[addrName({ col: col + 1, row })];
-      const spills = text !== "" && !numeric && align === "l" && (next === null || next === undefined);
+      const overflows = text !== "" && !numeric && align === "l" && (next === null || next === undefined);
       const className = [
         "xd-cell",
         `xd-a-${align}`,
@@ -961,7 +971,7 @@ export function Workbook(props: WorkbookProps) {
         style?.lined ? "is-lined" : "",
         style?.fill ? "is-filled" : "",
         selected ? "is-sel" : "",
-        spills ? "is-spill" : "",
+        overflows ? "is-overflow" : "",
         accounting ? "is-acct" : "",
       ]
         .filter(Boolean)
@@ -1134,7 +1144,7 @@ export function Workbook(props: WorkbookProps) {
         </button>
         <input
           ref={barRef}
-          class="xd-fb-input"
+          class={`xd-fb-input${ghost ? " is-ghost" : ""}`}
           aria-label="Formula Bar"
           value={barText}
           spellcheck={false}
@@ -1215,6 +1225,8 @@ export function Workbook(props: WorkbookProps) {
                     style={{ ...box(range), "--ref": REF_COLORS[i % REF_COLORS.length] }}
                   />
                 ))}
+                {spillRange && <div class="xd-spillbox" style={box(spillRange)} />}
+                {blockedRange && <div class="xd-spillbox is-blocked" style={box(blockedRange)} />}
                 {clip && <div class="xd-ants" style={box(clip.range)} />}
                 {!edit && (
                   <div class="xd-selbox" style={box(selRange)}>

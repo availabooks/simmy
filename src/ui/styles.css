@@ -1685,6 +1685,11 @@ button:focus-visible {
   -webkit-user-select: text;
 }
 
+/* A spilled cell's formula belongs to the anchor cell, so it shows greyed. */
+.xd-fb-input.is-ghost {
+  color: #a6a6a6;
+}
+
 /* Body: sheet + task pane */
 
 .xd-body {
@@ -1837,7 +1842,8 @@ button:focus-visible {
   white-space: pre;
 }
 
-.xd-cell.is-spill {
+/* Text running on into the empty cell to its right. */
+.xd-cell.is-overflow {
   position: relative;
   z-index: 1;
   overflow: visible;
@@ -1886,6 +1892,15 @@ button:focus-visible {
 
 .xd-fillbox {
   border: 1px dashed #4d4d4d;
+}
+
+/* Around a dynamic array's spill range while one of its cells is selected; dashed while blocked. */
+.xd-spillbox {
+  border: 1px solid #4472c4;
+}
+
+.xd-spillbox.is-blocked {
+  border-style: dashed;
 }
 
 .xd-ants {

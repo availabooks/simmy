@@ -348,14 +348,41 @@ export function Workbook(props: WorkbookProps) {
     ensureVisible(next);
   };
 
-  const commitAndMove = (dCol: number, dRow: number) => {
+  /** Commit the edit and move from the edited cell. Returns false when the formula was refused. */
+  const commitAndMove = (dCol: number, dRow: number): boolean => {
     if (!commitEdit()) {
-      return;
+      return false;
     }
     const next = clampAddr({ col: active.col + dCol, row: active.row + dRow });
     setSel({ anchor: next, focus: next });
     ensureVisible(next);
     focusGrid();
+    return true;
+  };
+
+  /**
+   * Excel's Tab-then-Enter: after Tab has moved across a row, Enter goes to the next row in the
+   * column the Tabs started from, so a table fills in row by row. `at` is where the last Tab
+   * landed. Any other move leaves the selection somewhere else, which ends the run.
+   */
+  const tabRun = useRef<{ startCol: number; at: Addr } | null>(null);
+
+  /** How far Enter or Tab moves from the active cell, and the Tab run to keep once it has. */
+  const enterTabStep = (key: "Enter" | "Tab", shift: boolean) => {
+    const run = tabRun.current;
+    const inRun = run !== null && run.at.col === active.col && run.at.row === active.row;
+    if (key === "Tab") {
+      const at = clampAddr({ col: active.col + (shift ? -1 : 1), row: active.row });
+      return {
+        dCol: shift ? -1 : 1,
+        dRow: 0,
+        run: shift ? null : { startCol: inRun ? run.startCol : active.col, at },
+      };
+    }
+    if (shift) {
+      return { dCol: 0, dRow: -1, run: null };
+    }
+    return { dCol: inRun ? run.startCol - active.col : 0, dRow: 1, run: null };
   };
 
   const setEditText = (text: string, nextCaret: number, point: Point | null = null) => {
@@ -689,7 +716,11 @@ export function Workbook(props: WorkbookProps) {
   };
 
   const onGridKeyDown = (event: TargetedKeyboardEvent<HTMLDivElement>) => {
-    if (alert) {
+    // The cell editor sits inside the grid, so its keys bubble here, but they are its own
+    // (onEditorKeyDown). By now its edit may already be committed and re-rendered, so acting
+    // on them again moved two cells after typing and Enter, and put typed characters at the
+    // end of the text instead of at the cursor.
+    if (alert || (event.target as Element).closest(".xd-cell-editor")) {
       return;
     }
     const pending = editRef.current;
@@ -751,13 +782,13 @@ export function Workbook(props: WorkbookProps) {
         moveActive(1, 0, event.shiftKey);
         return;
       case "Enter":
+      case "Tab": {
         handled();
-        moveActive(0, event.shiftKey ? -1 : 1);
+        const step = enterTabStep(key, event.shiftKey);
+        moveActive(step.dCol, step.dRow);
+        tabRun.current = step.run;
         return;
-      case "Tab":
-        handled();
-        moveActive(event.shiftKey ? -1 : 1, 0);
-        return;
+      }
       case "Delete":
       case "Backspace":
         handled();
@@ -801,12 +832,12 @@ export function Workbook(props: WorkbookProps) {
         return;
       }
     }
-    if (key === "Enter") {
+    if (key === "Enter" || key === "Tab") {
       event.preventDefault();
-      commitAndMove(0, event.shiftKey ? -1 : 1);
-    } else if (key === "Tab") {
-      event.preventDefault();
-      commitAndMove(event.shiftKey ? -1 : 1, 0);
+      const step = enterTabStep(key, event.shiftKey);
+      if (commitAndMove(step.dCol, step.dRow)) {
+        tabRun.current = step.run;
+      }
     } else if (key === "Escape") {
       event.preventDefault();
       cancelEdit();

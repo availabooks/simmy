@@ -11,6 +11,7 @@ import {
   fillWrites,
   formatValue,
   formulaRanges,
+  FUNCTIONS,
   type FunctionInfo,
   type Inputs,
   inRange,
@@ -39,29 +40,8 @@ const ROWHEAD_W = 34;
 const REF_COLORS = ["#2f6fdb", "#d6322b", "#8a3ab9", "#1e8a4c", "#c55a11", "#0f8b8d"];
 const POINTABLE = /[=(,+\-*/^&<>:]\s*$/;
 
-const SIGNATURES: Record<string, string> = {
-  AVERAGE: "number1, [number2], …",
-  MEDIAN: "number1, [number2], …",
-  MODE: "number1, [number2], …",
-  "MODE.SNGL": "number1, [number2], …",
-  MAX: "number1, [number2], …",
-  MIN: "number1, [number2], …",
-  SUM: "number1, [number2], …",
-  COUNT: "value1, [value2], …",
-  COUNTA: "value1, [value2], …",
-  COUNTIF: "range, criteria",
-  CORREL: "array1, array2",
-  STDEV: "number1, [number2], …",
-  "STDEV.S": "number1, [number2], …",
-  "STDEV.P": "number1, [number2], …",
-  VAR: "number1, [number2], …",
-  "VAR.S": "number1, [number2], …",
-  "VAR.P": "number1, [number2], …",
-  ROUND: "number, num_digits",
-  ABS: "number",
-  SQRT: "number",
-  IF: "logical_test, [value_if_true], [value_if_false]",
-};
+/** Each function's arguments, for the tooltip shown while typing inside its parentheses. */
+const SIGNATURES: Record<string, string> = Object.fromEntries(FUNCTIONS.map((fn) => [fn.name, fn.args]));
 
 type Selection = { anchor: Addr; focus: Addr };
 type Point = { start: number; end: number; anchor: Addr; focus: Addr };

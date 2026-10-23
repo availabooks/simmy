@@ -324,49 +324,218 @@ export function checkFormula(formula: string): void {
 
 /* --------------------------------------------------------------- functions */
 
-export type FunctionInfo = { name: string; summary: string };
+/** Where Excel files a function: the Formulas tab's Function Library menus. */
+export type FunctionCategory =
+  | "Logical"
+  | "Text"
+  | "Math & Trig"
+  | "Lookup & Reference"
+  | "Statistical"
+  | "Compatibility";
+
+/** A function as Excel describes it: its tooltip, its arguments, and where it's filed. */
+export type FunctionInfo = { name: string; summary: string; args: string; category: FunctionCategory };
 
 export const FUNCTIONS: FunctionInfo[] = [
-  { name: "ABS", summary: "Returns the absolute value of a number." },
-  { name: "AVERAGE", summary: "Returns the average (arithmetic mean) of its arguments." },
-  { name: "CONCAT", summary: "Concatenates a list or range of text strings." },
-  { name: "CORREL", summary: "Returns the correlation coefficient between two data sets." },
-  { name: "COUNT", summary: "Counts the number of cells in a range that contain numbers." },
-  { name: "COUNTA", summary: "Counts the number of cells in a range that are not empty." },
-  { name: "COUNTBLANK", summary: "Counts the number of empty cells in a specified range of cells." },
-  { name: "COUNTIF", summary: "Counts the number of cells within a range that meet the given condition." },
+  {
+    name: "ABS",
+    summary: "Returns the absolute value of a number.",
+    args: "number",
+    category: "Math & Trig",
+  },
+  {
+    name: "AVERAGE",
+    summary: "Returns the average (arithmetic mean) of its arguments.",
+    args: "number1, [number2], …",
+    category: "Statistical",
+  },
+  {
+    name: "CONCAT",
+    summary: "Concatenates a list or range of text strings.",
+    args: "text1, [text2], …",
+    category: "Text",
+  },
+  {
+    name: "CORREL",
+    summary: "Returns the correlation coefficient between two data sets.",
+    args: "array1, array2",
+    category: "Statistical",
+  },
+  {
+    name: "COUNT",
+    summary: "Counts the number of cells in a range that contain numbers.",
+    args: "value1, [value2], …",
+    category: "Statistical",
+  },
+  {
+    name: "COUNTA",
+    summary: "Counts the number of cells in a range that are not empty.",
+    args: "value1, [value2], …",
+    category: "Statistical",
+  },
+  {
+    name: "COUNTBLANK",
+    summary: "Counts the number of empty cells in a specified range of cells.",
+    args: "range",
+    category: "Statistical",
+  },
+  {
+    name: "COUNTIF",
+    summary: "Counts the number of cells within a range that meet the given condition.",
+    args: "range, criteria",
+    category: "Statistical",
+  },
   {
     name: "IF",
     summary: "Checks whether a condition is met, and returns one value if TRUE, and another if FALSE.",
+    args: "logical_test, [value_if_true], [value_if_false]",
+    category: "Logical",
   },
-  { name: "LEFT", summary: "Returns the specified number of characters from the start of a text string." },
-  { name: "LEN", summary: "Returns the number of characters in a text string." },
-  { name: "LOWER", summary: "Converts all letters in a text string to lowercase." },
-  { name: "MAX", summary: "Returns the largest value in a set of values." },
-  { name: "MEDIAN", summary: "Returns the median, or the number in the middle of the set of given numbers." },
+  {
+    name: "LEFT",
+    summary: "Returns the specified number of characters from the start of a text string.",
+    args: "text, [num_chars]",
+    category: "Text",
+  },
+  {
+    name: "LEN",
+    summary: "Returns the number of characters in a text string.",
+    args: "text",
+    category: "Text",
+  },
+  {
+    name: "LOWER",
+    summary: "Converts all letters in a text string to lowercase.",
+    args: "text",
+    category: "Text",
+  },
+  {
+    name: "MAX",
+    summary: "Returns the largest value in a set of values.",
+    args: "number1, [number2], …",
+    category: "Statistical",
+  },
+  {
+    name: "MEDIAN",
+    summary: "Returns the median, or the number in the middle of the set of given numbers.",
+    args: "number1, [number2], …",
+    category: "Statistical",
+  },
   {
     name: "MID",
     summary: "Returns the characters from the middle of a text string, given a starting position and length.",
+    args: "text, start_num, num_chars",
+    category: "Text",
   },
-  { name: "MIN", summary: "Returns the smallest number in a set of values." },
-  { name: "MODE", summary: "Returns the most frequently occurring value in a range of data." },
-  { name: "MODE.SNGL", summary: "Returns the most frequently occurring value in a range of data." },
-  { name: "RANDBETWEEN", summary: "Returns a random number between the numbers you specify." },
-  { name: "RIGHT", summary: "Returns the specified number of characters from the end of a text string." },
-  { name: "ROUND", summary: "Rounds a number to a specified number of digits." },
-  { name: "SEQUENCE", summary: "Returns a sequence of numbers." },
-  { name: "SORT", summary: "Sorts a range or array." },
-  { name: "SQRT", summary: "Returns the square root of a number." },
-  { name: "STDEV", summary: "Estimates standard deviation based on a sample." },
-  { name: "STDEV.P", summary: "Calculates standard deviation based on the entire population." },
-  { name: "STDEV.S", summary: "Estimates standard deviation based on a sample." },
-  { name: "SUM", summary: "Adds all the numbers in a range of cells." },
-  { name: "TEXTJOIN", summary: "Concatenates a list or range of text strings using a delimiter." },
-  { name: "UNIQUE", summary: "Returns the unique values from a range or array." },
-  { name: "UPPER", summary: "Converts a text string to all uppercase letters." },
-  { name: "VAR", summary: "Estimates variance based on a sample." },
-  { name: "VAR.P", summary: "Calculates variance based on the entire population." },
-  { name: "VAR.S", summary: "Estimates variance based on a sample." },
+  {
+    name: "MIN",
+    summary: "Returns the smallest number in a set of values.",
+    args: "number1, [number2], …",
+    category: "Statistical",
+  },
+  {
+    name: "MODE",
+    summary: "Returns the most frequently occurring value in a range of data.",
+    args: "number1, [number2], …",
+    category: "Compatibility",
+  },
+  {
+    name: "MODE.SNGL",
+    summary: "Returns the most frequently occurring value in a range of data.",
+    args: "number1, [number2], …",
+    category: "Statistical",
+  },
+  {
+    name: "RANDBETWEEN",
+    summary: "Returns a random number between the numbers you specify.",
+    args: "bottom, top",
+    category: "Math & Trig",
+  },
+  {
+    name: "RIGHT",
+    summary: "Returns the specified number of characters from the end of a text string.",
+    args: "text, [num_chars]",
+    category: "Text",
+  },
+  {
+    name: "ROUND",
+    summary: "Rounds a number to a specified number of digits.",
+    args: "number, num_digits",
+    category: "Math & Trig",
+  },
+  {
+    name: "SEQUENCE",
+    summary: "Returns a sequence of numbers.",
+    args: "rows, [columns], [start], [step]",
+    category: "Math & Trig",
+  },
+  {
+    name: "SORT",
+    summary: "Sorts a range or array.",
+    args: "array, [sort_index], [sort_order], [by_col]",
+    category: "Lookup & Reference",
+  },
+  { name: "SQRT", summary: "Returns the square root of a number.", args: "number", category: "Math & Trig" },
+  {
+    name: "STDEV",
+    summary: "Estimates standard deviation based on a sample.",
+    args: "number1, [number2], …",
+    category: "Compatibility",
+  },
+  {
+    name: "STDEV.P",
+    summary: "Calculates standard deviation based on the entire population.",
+    args: "number1, [number2], …",
+    category: "Statistical",
+  },
+  {
+    name: "STDEV.S",
+    summary: "Estimates standard deviation based on a sample.",
+    args: "number1, [number2], …",
+    category: "Statistical",
+  },
+  {
+    name: "SUM",
+    summary: "Adds all the numbers in a range of cells.",
+    args: "number1, [number2], …",
+    category: "Math & Trig",
+  },
+  {
+    name: "TEXTJOIN",
+    summary: "Concatenates a list or range of text strings using a delimiter.",
+    args: "delimiter, ignore_empty, text1, [text2], …",
+    category: "Text",
+  },
+  {
+    name: "UNIQUE",
+    summary: "Returns the unique values from a range or array.",
+    args: "array, [by_col], [exactly_once]",
+    category: "Lookup & Reference",
+  },
+  {
+    name: "UPPER",
+    summary: "Converts a text string to all uppercase letters.",
+    args: "text",
+    category: "Text",
+  },
+  {
+    name: "VAR",
+    summary: "Estimates variance based on a sample.",
+    args: "number1, [number2], …",
+    category: "Compatibility",
+  },
+  {
+    name: "VAR.P",
+    summary: "Calculates variance based on the entire population.",
+    args: "number1, [number2], …",
+    category: "Statistical",
+  },
+  {
+    name: "VAR.S",
+    summary: "Estimates variance based on a sample.",
+    args: "number1, [number2], …",
+    category: "Statistical",
+  },
 ];
 
 const FUNCTION_SET = new Set(FUNCTIONS.map((fn) => fn.name));

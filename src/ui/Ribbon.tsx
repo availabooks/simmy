@@ -1,5 +1,6 @@
 import type { ComponentChildren } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { FUNCTIONS, type FunctionCategory } from "../engine/sheet.ts";
+import { Menu } from "./Menu.tsx";
 
 /**
  * Which Excel to look like. "mac" and "win" are the desktop apps on their desktops. "web" is
@@ -32,19 +33,10 @@ export const AUTOSUM_ITEMS: { label: string; fn: string }[] = [
   { label: "Min", fn: "MIN" },
 ];
 
-const STATISTICAL = [
-  "AVERAGE",
-  "COUNT",
-  "COUNTIF",
-  "CORREL",
-  "MAX",
-  "MEDIAN",
-  "MIN",
-  "MODE.SNGL",
-  "STDEV.P",
-  "STDEV.S",
-  "VAR.S",
-];
+/** The functions Excel files under a Function Library category, alphabetically. */
+function functionsIn(category: FunctionCategory): string[] {
+  return FUNCTIONS.filter((fn) => fn.category === category).map((fn) => fn.name);
+}
 
 export type RibbonProps = {
   platform: Platform;
@@ -419,41 +411,37 @@ function FormulaGroups(props: RibbonProps) {
         <AutoSumButton onPick={props.onInsertFunction} />
         <BigButton label="Recently Used" dropdown icon={book("★", "#d29a2b")} />
         <BigButton label="Financial" dropdown icon={book("$", "#217346")} />
-        <BigButton label="Logical" dropdown icon={book("?", "#2b7bd6")} />
-        <BigButton label="Text" dropdown icon={book("A", "#616161")} />
+        <FunctionMenu
+          label="Logical"
+          icon={book("?", "#2b7bd6")}
+          sections={["Logical"]}
+          onPick={props.onInsertFunction}
+        />
+        <FunctionMenu
+          label="Text"
+          icon={book("A", "#616161")}
+          sections={["Text"]}
+          onPick={props.onInsertFunction}
+        />
         <BigButton label="Date & Time" dropdown icon={book("◷", "#2b7bd6")} />
-        <BigButton label="Lookup & Reference" dropdown icon={book("⌕", "#616161")} />
-        <BigButton label="Math & Trig" dropdown icon={book("θ", "#8a3ab9")} />
-        <Menu
-          trigger={(open, toggle) => (
-            <BigButton
-              label="More Functions"
-              dropdown
-              active={open}
-              onClick={toggle}
-              icon={book("…", "#616161")}
-            />
-          )}
-        >
-          {(close) => (
-            <>
-              <div class="xd-menu-head">Statistical</div>
-              {STATISTICAL.map((fn) => (
-                <button
-                  key={fn}
-                  type="button"
-                  class="xd-menu-item"
-                  onClick={() => {
-                    close();
-                    props.onInsertFunction(fn);
-                  }}
-                >
-                  {fn}
-                </button>
-              ))}
-            </>
-          )}
-        </Menu>
+        <FunctionMenu
+          label="Lookup & Reference"
+          icon={book("⌕", "#616161")}
+          sections={["Lookup & Reference"]}
+          onPick={props.onInsertFunction}
+        />
+        <FunctionMenu
+          label="Math & Trig"
+          icon={book("θ", "#8a3ab9")}
+          sections={["Math & Trig"]}
+          onPick={props.onInsertFunction}
+        />
+        <FunctionMenu
+          label="More Functions"
+          icon={book("…", "#616161")}
+          sections={["Statistical", "Compatibility"]}
+          onPick={props.onInsertFunction}
+        />
       </Group>
       <Group label="Defined Names" collapsible>
         <BigButton label="Name Manager" icon={book("N", "#616161")} />
@@ -483,6 +471,46 @@ function FormulaGroups(props: RibbonProps) {
         <BigButton label="Calculation Options" dropdown icon={book("=", "#217346")} />
       </Group>
     </>
+  );
+}
+
+/** A Function Library button whose menu lists the functions in its categories. */
+function FunctionMenu({
+  label,
+  icon,
+  sections,
+  onPick,
+}: {
+  label: string;
+  icon: ComponentChildren;
+  sections: FunctionCategory[];
+  onPick: (fn: string) => void;
+}) {
+  return (
+    <Menu
+      trigger={(open, toggle) => <BigButton label={label} dropdown active={open} onClick={toggle} icon={icon} />}
+    >
+      {(close) =>
+        sections.map((section) => (
+          <>
+            {sections.length > 1 && <div class="xd-menu-head">{section}</div>}
+            {functionsIn(section).map((fn) => (
+              <button
+                key={fn}
+                type="button"
+                class="xd-menu-item"
+                onClick={() => {
+                  close();
+                  onPick(fn);
+                }}
+              >
+                {fn}
+              </button>
+            ))}
+          </>
+        ))
+      }
+    </Menu>
   );
 }
 
@@ -534,36 +562,6 @@ function AutoSumButton({ onPick, small = false }: { onPick: (fn: string) => void
         ))
       }
     </Menu>
-  );
-}
-
-function Menu({
-  trigger,
-  children,
-}: {
-  trigger: (open: boolean, toggle: () => void) => ComponentChildren;
-  children: (close: () => void) => ComponentChildren;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    // composedPath sees through a shadow root, where event.target is retargeted to the host.
-    const onDown = (event: PointerEvent) => {
-      if (ref.current && !event.composedPath().includes(ref.current)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [open]);
-  return (
-    <span class="xd-menu-wrap" ref={ref}>
-      {trigger(open, () => setOpen(!open))}
-      {open && <div class="xd-menu">{children(() => setOpen(false))}</div>}
-    </span>
   );
 }
 

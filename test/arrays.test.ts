@@ -58,6 +58,23 @@ describe("dynamic arrays", () => {
     expect([values.C1, values.C2, values.C3]).toEqual([1, 2, 3]);
   });
 
+  it("keeps the earlier spill when the later one only reads empty cells on its own row", () => {
+    const { values } = evaluateBook({ C1: "=SEQUENCE(3,3)+Z1", A2: "=SEQUENCE(1,5)" });
+    expect(values.C1).toBe(1);
+    expect(values.A2).toEqual({ error: "#SPILL!" });
+  });
+
+  it("handles a long column of formulas that read empty cells, quickly", () => {
+    const inputs: Record<string, string> = {};
+    for (let row = 1; row <= 5000; row++) {
+      inputs[`B${row}`] = `=IF(C${row}="","",C${row}*2)`;
+    }
+    const started = performance.now();
+    const values = evaluateSheet(inputs);
+    expect(values.B5000).toBe("");
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
   it("refuses to spill off the sheet", () => {
     const { values } = evaluateBook({ ...column, C2: "=A1:A3" }, { bounds: { rows: 3, cols: 5 } });
     expect(values.C2).toEqual({ error: "#SPILL!" });

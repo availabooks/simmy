@@ -397,10 +397,14 @@ describe("the name dialogs", () => {
     expect(s.active()).toBe("Pool");
   });
 
-  it("renames with Edit and deletes after asking", async () => {
+  it("renames with Edit, rewriting formulas that use the name, and deletes after asking", async () => {
     const s = await sheet();
     s.goTo("C2");
     s.goTo("Rate");
+    s.goTo("H8");
+    s.type("=100*Rate");
+    s.press("Enter");
+    const before = s.cellText("H8");
     s.press("F3", false, true);
     click(s, "Edit…");
     const name = topDialog(s)?.querySelector("input") as HTMLInputElement;
@@ -409,6 +413,13 @@ describe("the name dialogs", () => {
     click(s, "OK");
     expect(topDialog(s)?.textContent).toContain("Discount");
     expect(topDialog(s)?.textContent).not.toContain("Rate");
+    click(s, "Close");
+    expect(s.cellText("H8")).toBe(before);
+    s.goTo("H8");
+    s.press("F2");
+    expect(s.editor()?.value).toBe("=100*Discount");
+    s.press("Escape");
+    s.press("F3", false, true);
     click(s, "Delete");
     expect(topDialog(s)?.textContent).toContain("Are you sure you want to delete the name Discount?");
     click(s, "OK");

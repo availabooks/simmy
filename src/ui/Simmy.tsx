@@ -1,7 +1,7 @@
 import type { ComponentChildren, CSSProperties, JSX, Ref, TargetedPointerEvent } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { addrName, evaluateSheet, formatValue, isError, rangeAddrs } from "../engine/sheet.ts";
-import { solvedState } from "../module/grade.ts";
+import { evalOptions, solvedState } from "../module/grade.ts";
 import type { NoteMessage, SimModule, UnsupportedTool } from "../module/types.ts";
 import { runAutopilot, type WorkbookApi } from "./autopilot.ts";
 import { CursorMark } from "./CursorMark.tsx";
@@ -1498,7 +1498,7 @@ function Poster({
   const { styles, widths } = mod.sheet;
   const values = useMemo(() => {
     const solved = solvedState(mod);
-    return evaluateSheet(solved.inputs, { names: solved.names, seed: solved.seed });
+    return evaluateSheet(solved.inputs, evalOptions(mod, solved));
   }, [mod]);
   const columns = widths.slice(poster.c1, poster.c2 + 1);
   const rows = [];

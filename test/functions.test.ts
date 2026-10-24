@@ -90,6 +90,13 @@ describe("SEQUENCE", () => {
     expect(calc("=SEQUENCE(2,-1)")).toEqual({ error: "#CALC!" });
   });
 
+  it("refuses arrays too big for a sheet, or for the simulator, without building them", () => {
+    expect(calc("=SEQUENCE(100000000)")).toEqual({ error: "#VALUE!" });
+    expect(calc("=SEQUENCE(1,20000)")).toEqual({ error: "#VALUE!" });
+    expect(calc("=SUM(SEQUENCE(2000,1000))")).toEqual({ error: "#NUM!" });
+    expect(calc("=SUM(SEQUENCE(1000))")).toBe(500500);
+  });
+
   it("spills, and A1-style references read it (SUM of SEQUENCE(10) is 55)", () => {
     const { values, spills } = evaluateBook({ A2: "=SEQUENCE(10)", C2: "=SUM(A2:A11)" });
     expect(rangeName(spills.A2)).toBe("A2:A11");

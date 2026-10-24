@@ -90,6 +90,8 @@ make `range` that one cell, and grade the cells it fills with a `value` rule's `
 letters, numbers, `.` and `_`; no spaces; nothing that reads as a cell reference (`Q1`, `R1C1`);
 not `C` or `R`; at most 255 characters. Names match without regard to case. Every name a
 formula uses must be defined in one of those places, and `simmy validate` says when one isn't.
+Each name is defined in only one place: Undo it deletes a task's names, so a task can't
+define a name the workbook starts with or another task defines.
 
 ## Rules
 

@@ -224,3 +224,44 @@ export function formulaNames(formula: string): string[] {
     return [];
   }
 }
+
+/**
+ * A formula with every use of the name `from` (in any case) changed to `to`, as Excel rewrites
+ * formulas when a name is renamed. A function of the same name, as in RATE(...), is left alone.
+ */
+export function renameInFormula(formula: string, from: string, to: string): string {
+  if (!isFormula(formula)) {
+    return formula;
+  }
+  const body = formula.slice(1);
+  let tokens;
+  try {
+    tokens = tokenize(body);
+  } catch {
+    return formula;
+  }
+  const upper = from.toUpperCase();
+  let out = "";
+  let last = 0;
+  tokens.forEach((token, i) => {
+    const next = tokens[i + 1];
+    const call = next?.kind === "op" && next.text === "(";
+    if (token.kind === "name" && !call && token.text.toUpperCase() === upper) {
+      out += body.slice(last, token.start) + to;
+      last = token.start + token.text.length;
+    }
+  });
+  return `=${out}${body.slice(last)}`;
+}
+
+/** The cell writes that rename a name in every formula that uses it. */
+export function renameWrites(inputs: Inputs, from: string, to: string): Inputs {
+  const writes: Inputs = {};
+  for (const [key, raw] of Object.entries(inputs)) {
+    const renamed = renameInFormula(raw, from, to);
+    if (renamed !== raw) {
+      writes[key] = renamed;
+    }
+  }
+  return writes;
+}

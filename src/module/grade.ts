@@ -5,15 +5,14 @@
 import { lookupName, nameRange } from "../engine/names.ts";
 import {
   addrName,
-  evaluateExpression,
-  evaluateFormulaAt,
-  evaluateSheet,
+  createEvaluator,
   type EvalOptions,
   formulaReferences,
   inRange,
   type Inputs,
   isError,
   isFormula,
+  type Matrix,
   normalizeFormula,
   parseAddr,
   parseRange,
@@ -87,9 +86,6 @@ export type TaskGrade = {
 
 export type GradeReport = { tasks: TaskGrade[]; earned: number; points: number };
 
-/** A cell well away from the sheet, where the grader works out expected values. */
-const SCRATCH = { col: 25, row: 98 };
-
 /**
  * value_correct: exactly the value, as the add-in compares it. A number may be off by up to
  * `tolerance`; with `trim`, text ignores every space. An error matches its code ("#N/A").
@@ -117,17 +113,34 @@ function sameValue(actual: Value, expected: Value): boolean {
   return false;
 }
 
-function passes(rule: RubricRule, book: WorkbookState, values: Record<string, Value>): boolean {
+/**
+ * A workbook ready to grade: its cells' values, and the expected values of rule formulas,
+ * worked out in the same pass over the sheet.
+ */
+type Grader = {
+  book: WorkbookState;
+  values: Record<string, Value>;
+  evaluate: (formula: string) => Value | Matrix;
+};
+
+function grader(book: WorkbookState, opts: EvalOptions): Grader {
+  const evaluator = createEvaluator(book.inputs, opts);
+  return { book, values: evaluator.book().values, evaluate: evaluator.expression };
+}
+
+/** A formula's value as a cell would show it: an array's top-left value. */
+const firstValue = (result: Value | Matrix): Value => (Array.isArray(result) ? result[0][0] : result);
+
+function passes(rule: RubricRule, { book, values, evaluate }: Grader): boolean {
   const { inputs, names } = book;
   switch (rule.kind) {
     case "value": {
       if (!rule.range) {
-        const expected = evaluateFormulaAt(inputs, rule.formula, SCRATCH, options(book));
-        return sameValue(values[rule.cell] ?? null, expected);
+        return sameValue(values[rule.cell] ?? null, firstValue(evaluate(rule.formula)));
       }
       // A spilled result: the formula's array must fill the range exactly.
       const range = parseRange(rule.range) as Range;
-      const result = evaluateExpression(inputs, rule.formula, options(book));
+      const result = evaluate(rule.formula);
       const expected = Array.isArray(result) ? result : [[result]];
       if (expected.length !== range.r2 - range.r1 + 1 || expected[0].length !== range.c2 - range.c1 + 1) {
         return false;
@@ -160,7 +173,7 @@ function passes(rule: RubricRule, book: WorkbookState, values: Record<string, Va
     }
     case "between": {
       const bound = (value: number | string): Value =>
-        typeof value === "number" ? value : evaluateFormulaAt(inputs, value, SCRATCH, options(book));
+        typeof value === "number" ? value : firstValue(evaluate(value));
       const lower = bound(rule.lower);
       const upper = bound(rule.upper);
       if (typeof lower !== "number" || typeof upper !== "number") {
@@ -213,27 +226,42 @@ function passes(rule: RubricRule, book: WorkbookState, values: Record<string, Va
   }
 }
 
-/** How the grader evaluates a workbook: with its names, and the numbers its seed picks. */
-function options(book: WorkbookState): EvalOptions {
-  return { names: book.names, seed: book.seed };
+/**
+ * How a module's workbook is evaluated, by the grid and the grader alike: with its names, the
+ * numbers its seed picks, and the sheet's size, so an array that runs off the sheet is #SPILL!
+ * in both.
+ */
+export function evalOptions(mod: SimModule, book: WorkbookState): EvalOptions {
+  return {
+    bounds: { rows: mod.sheet.rows, cols: mod.sheet.widths.length },
+    names: book.names,
+    seed: book.seed,
+  };
 }
 
-/** Grade one task. `book` is the workbook, or just its cells. */
-export function gradeTask(task: SimTask, book: WorkbookState | Inputs, values?: Record<string, Value>): TaskGrade {
-  const state = toState(book);
-  const cells = values ?? evaluateSheet(state.inputs, options(state));
+function gradeWith(task: SimTask, graded: Grader): TaskGrade {
   const deductions = task.rules
-    .filter((rule) => !passes(rule, state, cells))
+    .filter((rule) => !passes(rule, graded))
     .map((rule) => ({ points: rule.points, message: rule.message }));
   const lost = deductions.reduce((sum, d) => sum + d.points, 0);
   return { taskId: task.id, points: task.points, earned: Math.max(0, task.points - lost), deductions };
 }
 
+/**
+ * Grade one task. `book` is the workbook, or just its cells. Without the module the sheet's
+ * size isn't known, so an array is graded as if the sheet had room for it; gradeAssignment
+ * knows the size. `values` are ignored: they're worked out alongside the rules' formulas.
+ */
+export function gradeTask(task: SimTask, book: WorkbookState | Inputs, _values?: Record<string, Value>): TaskGrade {
+  const state = toState(book);
+  return gradeWith(task, grader(state, { names: state.names, seed: state.seed }));
+}
+
 /** Grade every task. `book` is the workbook, or just its cells. */
 export function gradeAssignment(mod: SimModule, book: WorkbookState | Inputs): GradeReport {
   const state = toState(book);
-  const values = evaluateSheet(state.inputs, options(state));
-  const tasks = mod.tasks.map((task) => gradeTask(task, state, values));
+  const graded = grader(state, evalOptions(mod, state));
+  const tasks = mod.tasks.map((task) => gradeWith(task, graded));
   return {
     tasks,
     earned: tasks.reduce((sum, grade) => sum + grade.earned, 0),

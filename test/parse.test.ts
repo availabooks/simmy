@@ -211,6 +211,18 @@ describe("names in a module", () => {
     ]);
   });
 
+  it("refuses a task name the workbook or an earlier task defines, since Undo it deletes it", () => {
+    const tasks = [
+      { ...minimal.tasks[0], names: { sales: "A1" } },
+      { ...minimal.tasks[0], names: { Rate: "A2" } },
+      { ...minimal.tasks[0], names: { RATE: "A2" } },
+    ];
+    expect(problems({ ...minimal, workbook: { name: "B", names: { Sales: "A1" } }, tasks })).toEqual([
+      "tasks[0].names.sales: is already defined in workbook.names, and Undo it would delete it",
+      "tasks[2].names.RATE: is already defined in tasks[1].names, and Undo it would delete it",
+    ]);
+  });
+
   it("needs a range with a solution, and something for Do it", () => {
     expect(problems(withNames({}, { solution: undefined }))).toContain(
       "tasks[0].solution: is needed with range",

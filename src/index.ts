@@ -12,6 +12,7 @@ export {
   type Deduction,
   doIt,
   doItWrites,
+  evalOptions,
   type GradeReport,
   gradeAssignment,
   gradeTask,

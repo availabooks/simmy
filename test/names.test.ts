@@ -10,6 +10,8 @@ import {
   namesFromSelection,
   parseRefersTo,
   refersToText,
+  renameInFormula,
+  renameWrites,
   suggestName,
 } from "../src/engine/names.ts";
 import {
@@ -50,6 +52,17 @@ describe("names in formulas", () => {
     expect([values.B1, values.B2, values.B3]).toEqual([5, 10, 60]);
   });
 
+  it("are references to functions, even for a single cell, as A1 is", () => {
+    const one = { Rate: "$A$1" };
+    const values = evaluateSheet(
+      { A1: "5", B1: '=COUNTIF(Rate,">1")', B2: "=COUNTBLANK(Rate)", B3: "=SUM(Rate)" },
+      { names: one },
+    );
+    expect([values.B1, values.B2, values.B3]).toEqual([1, 0, 5]);
+    // SUM skips text in a referenced cell, rather than giving #VALUE!.
+    expect(evaluateSheet({ A1: "abc", B1: "=SUM(Rate)" }, { names: one }).B1).toBe(0);
+  });
+
   it("spill when they name more than one cell", () => {
     const { values, spills } = evaluateBook({ ...data, C1: "=Prices*2" }, { names });
     expect([values.C1, values.C2, values.C3]).toEqual([20, 40, 60]);
@@ -73,6 +86,21 @@ describe("names in formulas", () => {
     expect(formulaReferences("=A1*Rate", names).map((r) => r.text)).toEqual(["A1", "$G$2"]);
     expect(formulaRanges("=SUM(Prices)", names).map(rangeName)).toEqual(["A1:A3"]);
     expect(formulaNames("=SUM(Prices)*Rate+TRUE")).toEqual(["Prices", "Rate"]);
+  });
+});
+
+describe("renaming a name", () => {
+  it("rewrites every use of it, in any case, leaving functions and text alone", () => {
+    expect(renameInFormula('=RATE(1,2,3)*rate+"Rate"&Rates', "Rate", "Discount")).toBe(
+      '=RATE(1,2,3)*Discount+"Rate"&Rates',
+    );
+    expect(renameInFormula("Rate", "Rate", "Discount")).toBe("Rate");
+  });
+
+  it("writes only the formulas that change", () => {
+    expect(renameWrites({ A1: "=Rate*2", A2: "=B1", A3: "Rate" }, "Rate", "Discount")).toEqual({
+      A1: "=Discount*2",
+    });
   });
 });
 

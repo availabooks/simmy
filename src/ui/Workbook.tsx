@@ -36,10 +36,11 @@ import {
   nameRange,
   namesFromSelection,
   refersToText,
+  renameWrites,
   suggestName,
 } from "../engine/names.ts";
 import { applyChange, type Change, nextSeed, type WorkbookState } from "../engine/workbook.ts";
-import { initialState } from "../module/grade.ts";
+import { evalOptions, initialState } from "../module/grade.ts";
 import { Menu } from "./Menu.tsx";
 import {
   CreateNamesDialog,
@@ -212,8 +213,8 @@ export function Workbook(props: WorkbookProps) {
   editRef.current = edit;
 
   const sheetEval = useMemo(
-    () => evaluateBook(inputs, { bounds: { rows: rowCount, cols }, names, seed: book.state.seed }),
-    [book.state, rowCount, cols],
+    () => evaluateBook(inputs, evalOptions(mod, book.state)),
+    [book.state, mod],
   );
   const { values } = sheetEval;
   const selRange = normalizeRange(sel.anchor, sel.focus);
@@ -1590,11 +1591,13 @@ export function Workbook(props: WorkbookProps) {
               onCancel={closeDialog}
               onSave={(entry) => {
                 const old = dialog.editing;
-                const renamed = old && old !== entry.name ? { [old]: null } : {};
+                const renaming = old !== undefined && old !== entry.name;
                 // Close first: the dialog mustn't render again for a name that's gone.
                 closeDialog();
                 apply({
-                  names: { ...renamed, [entry.name]: entry.ref },
+                  // As in Excel, formulas that used the old name now use the new one.
+                  cells: renaming ? renameWrites(inputs, old, entry.name) : undefined,
+                  names: { ...(renaming ? { [old]: null } : {}), [entry.name]: entry.ref },
                   nameComments: { [entry.name]: entry.comment },
                 });
               }}

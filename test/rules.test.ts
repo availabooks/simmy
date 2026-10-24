@@ -48,6 +48,26 @@ describe("value over a range (a spilled result)", () => {
   });
 });
 
+describe("grading an array that runs off the sheet", () => {
+  it("sees #SPILL!, as the student does, not the spilled values", () => {
+    const mod = parseModule({
+      workbook: { name: "Book1" },
+      assignment: { title: "Edge", text: "Count." },
+      sheet: { rows: 10, columns: 3 },
+      tasks: [
+        {
+          text: "Count to five in A9.",
+          range: "A9",
+          solution: "=SEQUENCE(5)",
+          rules: [rule({ kind: "between", range: "A9:A10", lower: 1, upper: 5 })],
+        },
+      ],
+    });
+    expect(gradeAssignment(mod, { A9: "=SEQUENCE(5)" }).earned).toBe(0);
+    expect(gradeAssignment(mod, { A9: "=SEQUENCE(2)" }).earned).toBe(1);
+  });
+});
+
 describe("equals", () => {
   it("compares exactly, as value_correct does", () => {
     const upper = [rule({ kind: "equals", cell: "B1", value: "PEAR" })];

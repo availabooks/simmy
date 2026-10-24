@@ -238,6 +238,9 @@ export function parseModule(data: unknown): SimModule {
   };
 
   const workbookNames = namesMap(workbookRaw.names, "workbook.names");
+  // Where each name is defined. Undo it deletes a task's names, so a task mustn't define a name
+  // the workbook starts with or another task defines.
+  const nameHomes = new Map(Object.keys(workbookNames).map((name) => [name.toUpperCase(), "workbook.names"]));
 
   const cells: Inputs = {};
   for (const [key, raw] of Object.entries(obj(sheetRaw.cells, "sheet.cells"))) {
@@ -322,6 +325,14 @@ export function parseModule(data: unknown): SimModule {
     const id = str(raw.id, `${path}.id`, String.fromCharCode(65 + i));
     // Do it writes a solution across a range, defines names, or both.
     const names = namesMap(raw.names, `${path}.names`);
+    for (const name of Object.keys(names)) {
+      const home = nameHomes.get(name.toUpperCase());
+      if (home) {
+        fail(`${path}.names.${name}`, `is already defined in ${home}, and Undo it would delete it`);
+      } else {
+        nameHomes.set(name.toUpperCase(), `${path}.names`);
+      }
+    }
     if ((raw.range === undefined) !== (raw.solution === undefined)) {
       const [missing, given] = raw.range === undefined ? ["range", "solution"] : ["solution", "range"];
       fail(`${path}.${missing}`, `is needed with ${given}`);

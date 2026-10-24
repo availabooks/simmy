@@ -867,14 +867,23 @@ function rangeMatrix(range: Range, ctx: Ctx): Matrix {
   return rows;
 }
 
+/** The largest sheet Excel has: an array that couldn't fit on one is #VALUE!. */
+const EXCEL_ROWS = 1048576;
+const EXCEL_COLS = 16384;
+/**
+ * simmy's own limit on an array's size, so SEQUENCE(100000000) is #NUM! rather than freezing
+ * the page. It's far bigger than any simmy sheet, so it only differs from Excel inside another
+ * function, as in SUM(SEQUENCE(2000000)).
+ */
+const MAX_ARRAY = 1_000_000;
+
 function evalArg(node: Node, ctx: Ctx): Arg {
   // A reference is a range to a function, even a single cell: SUM(A1) skips text in A1.
-  const ref =
-    node.type === "ref" ||
-    node.type === "range" ||
-    node.type === "spill" ||
-    (node.type === "name" && ctx.name(node.name) !== null);
-  const result = node.type === "ref" ? [[ctx.cell(node.addr)]] : evalNode(node, ctx);
+  // So is a name, even one for a single cell: COUNTBLANK(Rate) counts Rate's cell.
+  const named = node.type === "name" ? ctx.name(node.name) : null;
+  const ref = node.type === "ref" || node.type === "range" || node.type === "spill" || named !== null;
+  const result =
+    node.type === "ref" ? [[ctx.cell(node.addr)]] : named ? rangeMatrix(named, ctx) : evalNode(node, ctx);
   if (!isMatrix(result)) {
     return { kind: "scalar", value: result };
   }
@@ -1072,6 +1081,12 @@ function callFunction(name: string, nodes: Node[], ctx: Ctx): Result {
     const width = Math.trunc(cols);
     if (height < 1 || width < 1) {
       return err("#CALC!");
+    }
+    if (height > EXCEL_ROWS || width > EXCEL_COLS) {
+      return err("#VALUE!");
+    }
+    if (height * width > MAX_ARRAY) {
+      return err("#NUM!");
     }
     return Array.from({ length: height }, (_, r) =>
       Array.from({ length: width }, (_, c) => start + step * (r * width + c)),
@@ -1479,9 +1494,13 @@ const byPosition = (a: string, b: string): number => {
  * Evaluates a sheet on demand. A formula whose result is an array spills it into the cells
  * below and to the right, unless any of them holds something, another spill got there first,
  * or it runs off the sheet; then the formula shows #SPILL!. Formulas are worked out in reading
- * order, so when two spills collide the earlier one always wins.
+ * order, so when two spills collide the earlier one usually wins. The exception: a formula
+ * that reads an empty cell first works out the formulas above and to the left of that cell,
+ * since one of them may spill into it, and any of those spills is placed first. Either way
+ * the same sheet always comes out the same, as it does in Excel, where the order of
+ * calculation decides.
  */
-function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
+export function createEvaluator(inputs: Inputs, opts: EvalOptions = {}) {
   const out: SheetEval = { values: {}, spills: {}, blocked: {}, owner: {} };
   const { values } = out;
   const visiting = new Set<string>();
@@ -1490,7 +1509,9 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
   const formulaKeys = Object.keys(inputs)
     .filter((key) => isFormula(inputs[key]) && parseAddr(key))
     .sort(byPosition);
-  let settled = false;
+  const positions = formulaKeys.map((key) => parseAddr(key) as Addr);
+  // Every formula before this one in reading order is done.
+  let firstPending = 0;
 
   // Each cell gets its own stream of random numbers, so one cell's RANDBETWEEN doesn't move
   // when another formula is added.
@@ -1516,20 +1537,21 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
   };
 
   /**
-   * Work out every formula not yet done, so all the spills are in place. It can run again from
-   * inside itself (a formula it works out reads an empty cell), which is safe: formulas being
-   * worked out are skipped, and each is worked out once.
+   * Work out every formula that could spill into `addr`: those above and to the left of it.
+   * Formulas being worked out are skipped. Only looking up and left keeps this shallow: a
+   * column of formulas that each read an empty cell beside them, worked out from the top,
+   * never has to start another formula from inside one.
    */
-  const settle = () => {
-    if (settled) {
-      return;
+  const settleAt = (addr: Addr) => {
+    while (firstPending < formulaKeys.length && done.has(formulaKeys[firstPending])) {
+      firstPending++;
     }
-    for (const key of formulaKeys) {
-      if (!done.has(key) && !visiting.has(key)) {
+    for (let i = firstPending; i < formulaKeys.length && positions[i].row <= addr.row; i++) {
+      const key = formulaKeys[i];
+      if (positions[i].col <= addr.col && !done.has(key) && !visiting.has(key)) {
         evaluateCell(key);
       }
     }
-    settled = done.size === formulaKeys.length;
   };
 
   function cell(addr: Addr): Value {
@@ -1540,7 +1562,7 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
     const raw = inputs[key];
     if (raw === undefined || raw === "") {
       // An empty cell may be part of a spill whose formula hasn't been worked out yet.
-      settle();
+      settleAt(addr);
       return values[key] ?? null;
     }
     if (!isFormula(raw)) {
@@ -1611,26 +1633,49 @@ function sheetEvaluator(inputs: Inputs, opts: EvalOptions) {
     });
   }
 
+  let finished = false;
   return {
-    ctx,
-    settle,
     /** Every cell's value and the spills. */
-    finish(): SheetEval {
-      settle();
-      for (const key of Object.keys(inputs)) {
-        const addr = parseAddr(key);
-        if (addr) {
-          cell(addr);
+    book(): SheetEval {
+      if (!finished) {
+        for (const key of formulaKeys) {
+          if (!done.has(key)) {
+            evaluateCell(key);
+          }
         }
+        for (const key of Object.keys(inputs)) {
+          const addr = parseAddr(key);
+          if (addr) {
+            cell(addr);
+          }
+        }
+        finished = true;
       }
       return out;
+    },
+    /**
+     * Evaluate a formula against the sheet without putting it in a cell. An array result comes
+     * back whole, rather than spilled. Each call shares the sheet's work, so grading many
+     * formulas costs one pass over the sheet.
+     */
+    expression(formula: string): Value | Matrix {
+      let tree: Node;
+      try {
+        tree = parseFormula(formula);
+      } catch {
+        return err("#NAME?");
+      }
+      // Each expression gets the same random numbers, whichever order they're asked in.
+      streams.delete("");
+      const result = evalNode(tree, ctx);
+      return isMatrix(result) ? result.map((row) => row.map(cellValue)) : cellValue(result);
     },
   };
 }
 
 /** Evaluate every cell, placing each dynamic array where it spills. */
 export function evaluateBook(inputs: Inputs, opts: EvalOptions = {}): SheetEval {
-  return sheetEvaluator(inputs, opts).finish();
+  return createEvaluator(inputs, opts).book();
 }
 
 /** Evaluate every cell. Circular references resolve to 0, as Excel shows after its warning. */
@@ -1643,19 +1688,13 @@ export function evaluateSheet(inputs: Inputs, opts: EvalOptions = {}): Record<st
  * back whole, rather than spilled.
  */
 export function evaluateExpression(inputs: Inputs, formula: string, opts: EvalOptions = {}): Value | Matrix {
-  const sheet = sheetEvaluator(inputs, opts);
-  sheet.settle();
-  let tree: Node;
-  try {
-    tree = parseFormula(formula);
-  } catch {
-    return err("#NAME?");
-  }
-  const result = evalNode(tree, sheet.ctx);
-  return isMatrix(result) ? result.map((row) => row.map(cellValue)) : cellValue(result);
+  return createEvaluator(inputs, opts).expression(formula);
 }
 
-/** What a formula would show in a cell: an array's top-left value. */
+/**
+ * What a formula would show in a cell: an array's top-left value. `_at` no longer matters (the
+ * formula isn't written into the sheet); it stays so existing callers keep working.
+ */
 export function evaluateFormulaAt(inputs: Inputs, formula: string, _at?: Addr, opts: EvalOptions = {}): Value {
   const result = evaluateExpression(inputs, formula, opts);
   return isMatrix(result) ? result[0][0] : result;

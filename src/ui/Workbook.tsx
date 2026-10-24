@@ -24,7 +24,9 @@ import {
   type Range,
   rangeAddrs,
   rangeName,
+  rangeText,
   suggestFunctions,
+  textPasteWrites,
   type Value,
 } from "../engine/sheet.ts";
 import {
@@ -179,6 +181,10 @@ export function Workbook(props: WorkbookProps) {
   const [sel, setSel] = useState<Selection>({ anchor: startAddr, focus: startAddr });
   const [edit, setEdit] = useState<Edit | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
+  /** What the last copy put on the system clipboard, to know a paste of it when it comes back. */
+  const copiedText = useRef("");
+  /** Set when a copy couldn't reach the system clipboard: then a paste uses the copied cells. */
+  const internalOnly = useRef(false);
   const [fillTarget, setFillTarget] = useState<Range | null>(null);
   const [alert, setAlert] = useState<Alert | null>(null);
   const [dialogs, setDialogs] = useState<DialogState[]>([]);
@@ -719,7 +725,31 @@ export function Workbook(props: WorkbookProps) {
 
   /* ----------------------------------------------------------- keyboard */
 
-  const copy = (cut = false) => setClip(copyRange(inputs, selRange, cut));
+  const copy = (cut = false) => {
+    setClip(copyRange(inputs, selRange, cut));
+    internalOnly.current = false;
+    copiedText.current = rangeText(selRange, (addr) => {
+      const key = addrName(addr);
+      // Wide enough that a number never shows as ####.
+      return formatValue(values[key] ?? null, styles[key]?.format ?? "General", 10000);
+    });
+  };
+  /**
+   * The ribbon's Copy and Cut, which have no copy event to carry the text, so they write the
+   * clipboard themselves. If the page won't allow that, the next paste uses the copied cells.
+   */
+  const copyToClipboard = (cut = false) => {
+    copy(cut);
+    const text = copiedText.current;
+    const failed = () => {
+      internalOnly.current = true;
+    };
+    try {
+      navigator.clipboard.writeText(text).catch(failed);
+    } catch {
+      failed();
+    }
+  };
   const paste = () => {
     if (!clip) {
       return;
@@ -734,6 +764,52 @@ export function Workbook(props: WorkbookProps) {
     if (clip.cut) {
       setClip(null);
     }
+  };
+  /**
+   * Paste text from the system clipboard, copied from anywhere: one cell, or a table with tabs
+   * between cells. Text simmy copied itself pastes as its cells instead, so formulas shift.
+   */
+  const pasteText = (text: string) => {
+    if (clip && (internalOnly.current || text === copiedText.current)) {
+      paste();
+      return;
+    }
+    const pasted = textPasteWrites(text, { col: selRange.c1, row: selRange.r1 }, { rows: rowCount, cols });
+    if (!pasted) {
+      paste();
+      return;
+    }
+    const writes: Inputs = {};
+    for (const [key, raw] of Object.entries(pasted.writes)) {
+      writes[key] = normalizeFormula(raw, names);
+    }
+    write(writes);
+    setSel({
+      anchor: { col: pasted.range.c1, row: pasted.range.r1 },
+      focus: { col: pasted.range.c2, row: pasted.range.r2 },
+    });
+  };
+  // Ctrl+V lets the browser's paste event bring the clipboard's text. Should no event come,
+  // the cells simmy copied are pasted.
+  const pasteFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onGridPaste = (event: ClipboardEvent) => {
+    if (editRef.current || (event.target as Element).closest("input, textarea")) {
+      return;
+    }
+    event.preventDefault();
+    if (pasteFallback.current) {
+      clearTimeout(pasteFallback.current);
+      pasteFallback.current = null;
+    }
+    pasteText(event.clipboardData?.getData("text/plain") ?? "");
+  };
+  const onGridCopy = (event: ClipboardEvent, cut = false) => {
+    if (editRef.current || (event.target as Element).closest("input, textarea")) {
+      return;
+    }
+    event.preventDefault();
+    copy(cut);
+    event.clipboardData?.setData("text/plain", copiedText.current);
   };
   const clear = () => {
     const writes: Inputs = {};
@@ -779,15 +855,18 @@ export function Workbook(props: WorkbookProps) {
       } else if (lower === "y" || (lower === "z" && event.shiftKey)) {
         handled();
         redo();
-      } else if (lower === "c") {
-        handled();
-        copy();
-      } else if (lower === "x") {
-        handled();
-        copy(true);
-      } else if (lower === "v") {
-        handled();
-        paste();
+      } else if (lower === "c" || lower === "x" || lower === "v") {
+        // Left to the browser's copy, cut and paste events, which reach the system clipboard.
+        // The cells are copied now too, in case a browser sends no copy event.
+        if (lower !== "v") {
+          copy(lower === "x");
+          internalOnly.current = true;
+        } else {
+          pasteFallback.current = setTimeout(() => {
+            pasteFallback.current = null;
+            paste();
+          });
+        }
       } else if (lower === "d") {
         handled();
         fill("down");
@@ -1238,8 +1317,8 @@ export function Workbook(props: WorkbookProps) {
             onTogglePane={command(() => setPaneOpen(!paneOpen))}
             onInsertFunction={command(insertFunction)}
             onStartFormula={command(() => (edit ? undefined : startEdit("=", "enter")))}
-            onCopy={command(() => copy())}
-            onCut={command(() => copy(true))}
+            onCopy={command(() => copyToClipboard())}
+            onCut={command(() => copyToClipboard(true))}
             onPaste={command(paste)}
             onClear={command(clear)}
             onFillDown={command(() => fill("down"))}
@@ -1394,6 +1473,9 @@ export function Workbook(props: WorkbookProps) {
               }
             }}
             onKeyDown={onGridKeyDown}
+            onCopy={(event) => onGridCopy(event)}
+            onCut={(event) => onGridCopy(event, true)}
+            onPaste={onGridPaste}
           >
             <div
               class="xd-grid"

@@ -13,7 +13,9 @@ import {
   FormulaSyntaxError,
   parseRange,
   rangeName,
+  rangeText,
   shiftFormula,
+  textPasteWrites,
 } from "../src/engine/sheet.ts";
 
 describe("evaluateSheet", () => {
@@ -131,6 +133,29 @@ describe("editing helpers", () => {
       M4: "",
       N4: "=AVERAGE(D3:D37)",
     });
+  });
+});
+
+describe("the system clipboard", () => {
+  it("copies a range as tab-separated lines, as Excel does", () => {
+    const text = rangeText(parseRange("A1:B2") as Range, (addr) => `${addr.col}${addr.row}`);
+    expect(text).toBe("00\t10\r\n01\t11\r\n");
+  });
+
+  it("pastes text as typed cells from the active cell, any line ending", () => {
+    expect(textPasteWrites("5", { col: 1, row: 1 }, { rows: 10, cols: 10 })).toEqual({
+      writes: { B2: "5" },
+      range: parseRange("B2"),
+    });
+    const table = textPasteWrites("a\t\tc\n=1+1\r\n", { col: 0, row: 0 }, { rows: 10, cols: 10 });
+    expect(table?.writes).toEqual({ A1: "a", B1: "", C1: "c", A2: "=1+1" });
+    expect(rangeName(table?.range as Range)).toBe("A1:C2");
+  });
+
+  it("drops what's past the sheet's edge, and nothing pastes from empty text", () => {
+    const edge = textPasteWrites("1\t2\n3\t4", { col: 1, row: 1 }, { rows: 2, cols: 2 });
+    expect(edge?.writes).toEqual({ B2: "1" });
+    expect(textPasteWrites("", { col: 0, row: 0 }, { rows: 2, cols: 2 })).toBeNull();
   });
 });
 

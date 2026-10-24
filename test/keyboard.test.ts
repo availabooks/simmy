@@ -90,7 +90,28 @@ async function sheet() {
     field.dispatchEvent(new Event("input", { bubbles: true }));
   };
   const ok = () => dialog()?.querySelector<HTMLButtonElement>(".xd-dialog-btn.is-default")?.click();
+  /**
+   * A copy, cut or paste event where the focus would be, carrying `text` as the system
+   * clipboard's. Returns the clipboard's text afterwards, and whether simmy took the event.
+   */
+  const clipboard = (type: "copy" | "cut" | "paste", text = "") => {
+    const data = new Map([["text/plain", text]]);
+    const event = new Event(type, { bubbles: true, cancelable: true, composed: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: (format: string) => data.get(format) ?? "",
+        setData: (format: string, value: string) => data.set(format, value),
+      },
+    });
+    (editor() ?? grid).dispatchEvent(event);
+    return { text: data.get("text/plain") ?? "", taken: event.defaultPrevented };
+  };
+  /** The column and row headers that show as selected. */
+  const selectedHeads = () =>
+    [...shadow.querySelectorAll(".xd-colhead.is-sel, .xd-rowhead.is-sel")].map((head) => head.textContent);
   return {
+    clipboard,
+    selectedHeads,
     press,
     type,
     goTo,
@@ -436,5 +457,79 @@ describe("the name dialogs", () => {
     expect(topDialog(s)?.getAttribute("aria-label")).toBe("Paste Name");
     click(s, "OK");
     expect(s.editor()?.value).toBe("=100*Rate");
+  });
+});
+
+describe("pasting into a cell", () => {
+  it("pastes text copied elsewhere into the selected cell, without editing it first", async () => {
+    const s = await sheet();
+    s.goTo("H2");
+    expect(s.clipboard("paste", "42").taken).toBe(true);
+    expect(s.editor()).toBeNull();
+    expect(s.cellText("H2")).toBe("42");
+    s.goTo("H3");
+    s.clipboard("paste", "hello");
+    expect(s.cellText("H3")).toBe("hello");
+  });
+
+  it("pastes a copied table across cells, from a line per row and tabs between cells", async () => {
+    const s = await sheet();
+    s.goTo("H2");
+    s.clipboard("paste", "a\tb\r\n1\t2\r\n");
+    expect([s.cellText("H2"), s.cellText("I2"), s.cellText("H3"), s.cellText("I3")]).toEqual(["a", "b", "1", "2"]);
+    expect(s.selectedHeads()).toEqual(["H", "I", "2", "3"]);
+  });
+
+  it("enters a pasted formula as if it were typed", async () => {
+    const s = await sheet();
+    s.goTo("H2");
+    s.clipboard("paste", "=sum(c6:c7)");
+    expect(s.cellText("H2")).toBe("426.66");
+    s.press("F2");
+    expect(s.editor()?.value).toBe("=SUM(C6:C7)");
+  });
+
+  it("pastes cells copied in the sheet as cells, so their formulas shift", async () => {
+    const s = await sheet();
+    s.goTo("H2");
+    s.type("=C6*2");
+    s.press("Enter");
+    s.goTo("H2");
+    s.press("c", false, true);
+    const copied = s.clipboard("copy");
+    expect(copied.taken).toBe(true);
+    expect(copied.text).toBe("701.98\r\n");
+    s.goTo("H3");
+    s.press("v", false, true);
+    s.clipboard("paste", copied.text);
+    expect(s.cellText("H3")).toBe("151.34");
+    s.press("F2");
+    expect(s.editor()?.value).toBe("=C7*2");
+  });
+
+  it("still pastes the copied cells when the browser sends no paste event", async () => {
+    const s = await sheet();
+    s.goTo("C6");
+    s.press("c", false, true);
+    s.goTo("H6");
+    s.press("v", false, true);
+    await settle();
+    expect(s.cellText("H6")).toBe("350.99");
+  });
+
+  it("leaves a paste while typing to the cell editor", async () => {
+    const s = await sheet();
+    s.goTo("H2");
+    s.type("ab");
+    expect(s.clipboard("paste", "xyz").taken).toBe(false);
+    expect(s.editor()).not.toBeNull();
+  });
+
+  it("drops what would land past the sheet's edge", async () => {
+    const s = await sheet();
+    s.goTo("T40");
+    s.clipboard("paste", "1\t2\n3\t4");
+    expect(s.cellText("T40")).toBe("1");
+    expect(s.selectedHeads()).toEqual(["T", "40"]);
   });
 });

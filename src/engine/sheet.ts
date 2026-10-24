@@ -2039,6 +2039,54 @@ export function pasteWrites(clip: Clip, at: Addr): Inputs {
 }
 
 /**
+ * A range as text for the system clipboard, as Excel copies it: what each cell shows, a tab
+ * between cells and a line break after each row, so it pastes into other programs as a table.
+ */
+export function rangeText(range: Range, show: (addr: Addr) => string): string {
+  let text = "";
+  for (let row = range.r1; row <= range.r2; row++) {
+    const line: string[] = [];
+    for (let col = range.c1; col <= range.c2; col++) {
+      line.push(show({ col, row }));
+    }
+    text += `${line.join("\t")}\r\n`;
+  }
+  return text;
+}
+
+/**
+ * Writes for pasting text from outside the sheet at `at`: a line per row and a tab between
+ * cells, the way other programs copy a table. Each piece goes in as if it had been typed, and
+ * an empty piece clears its cell. Anything past the sheet's edge is dropped. Returns the range
+ * pasted into, or null for empty text.
+ */
+export function textPasteWrites(
+  text: string,
+  at: Addr,
+  bounds: { rows: number; cols: number },
+): { writes: Inputs; range: Range } | null {
+  const lines = text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n");
+  if (lines.length === 1 && lines[0] === "") {
+    return null;
+  }
+  const writes: Inputs = {};
+  let c2 = at.col;
+  let r2 = at.row;
+  lines.forEach((line, r) => {
+    line.split("\t").forEach((piece, c) => {
+      const dest = { col: at.col + c, row: at.row + r };
+      if (dest.col >= bounds.cols || dest.row >= bounds.rows) {
+        return;
+      }
+      writes[addrName(dest)] = piece;
+      c2 = Math.max(c2, dest.col);
+      r2 = Math.max(r2, dest.row);
+    });
+  });
+  return { writes, range: { c1: at.col, r1: at.row, c2, r2 } };
+}
+
+/**
  * Every cell reference in a formula as typed (with any $), and the range it belongs to. A
  * defined name counts as the reference it stands for, written as defined ("$C$2").
  */

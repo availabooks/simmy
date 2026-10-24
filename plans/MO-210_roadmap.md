@@ -23,7 +23,7 @@ each feature against. Update this file as a phase moves along, in the same commi
 
 | Phase | Scope | Size | Status |
 |---|---|---|---|
-| 1 | Formulas and functions | L | Built on the `phase-1-formulas` branch; not merged or released |
+| 1 | Formulas and functions | L | Merged to `main`; not yet released |
 | 2 | Workbook model and frameworks | L | Planned |
 | 3 | Cell formatting | L | Planned |
 | 4 | Data and navigation | L | Planned |
